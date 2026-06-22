@@ -1,0 +1,35 @@
+from dataclasses import dataclass
+from datetime import datetime
+from uuid import UUID
+
+from server.schemas.assets import AudioAssetStatus, TranscriptionJobStatus
+
+
+@dataclass(frozen=True)
+class Project:
+    id: UUID
+    title: str
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class AudioAsset:
+    id: UUID
+    project_id: UUID
+    original_filename: str
+    stored_filename: str
+    content_type: str
+    extension: str
+    size_bytes: int
+    status: AudioAssetStatus
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class TranscriptionJob:
+    id: UUID
+    project_id: UUID
+    audio_asset_id: UUID
+    status: TranscriptionJobStatus
+    created_at: datetime
+    updated_at: datetime
