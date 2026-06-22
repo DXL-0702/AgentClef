@@ -2,14 +2,11 @@ from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 
 from server.app import create_app
-from server.config import Settings
+from tests.settings_helpers import make_settings
 
 
 def test_health_check_returns_public_runtime_state(monkeypatch: MonkeyPatch) -> None:
-    for field_name in Settings.model_fields:
-        monkeypatch.delenv(f"AGENTCLEF_{field_name.upper()}", raising=False)
-    monkeypatch.setattr(Settings, "model_config", {**Settings.model_config, "env_file": None})
-    settings = Settings()
+    settings = make_settings(monkeypatch)
     app = create_app(settings)
     client = TestClient(app)
 

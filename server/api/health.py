@@ -1,11 +1,7 @@
-from typing import cast
-
-from fastapi import APIRouter
-from fastapi import Request
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from server.config import Settings
-from server.config import get_settings
+from server.config import Settings, get_settings
 
 router = APIRouter(tags=["health"])
 
@@ -28,11 +24,7 @@ class HealthResponse(BaseModel):
 
 
 @router.get("/health", response_model=HealthResponse)
-def health_check(request: Request) -> HealthResponse:
-    settings = getattr(request.app.state, "settings", None)
-    if settings is None:
-        settings = get_settings()
-    settings = cast(Settings, settings)
+def health_check(settings: Settings = Depends(get_settings)) -> HealthResponse:
     return HealthResponse(
         status="ok",
         service=settings.app_name,

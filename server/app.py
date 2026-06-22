@@ -8,7 +8,8 @@ from server.config import Settings, get_settings
 def create_app(settings: Settings | None = None) -> FastAPI:
     runtime_settings = settings or get_settings()
     app = FastAPI(title=runtime_settings.app_name, version=runtime_settings.app_version)
-    app.state.settings = runtime_settings
+    if settings is not None:
+        app.dependency_overrides[get_settings] = lambda: settings
     app.add_middleware(
         CORSMiddleware,
         allow_origins=runtime_settings.cors_origins,

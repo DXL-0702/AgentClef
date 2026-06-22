@@ -14,6 +14,11 @@ from pydantic_settings import (
 
 def parse_cors_origins_env(value: str) -> list[str] | None:
     normalized = value.strip()
+    if (
+        (normalized.startswith("'") and normalized.endswith("'"))
+        or (normalized.startswith('"') and normalized.endswith('"'))
+    ):
+        normalized = normalized[1:-1].strip()
     if not normalized or normalized.startswith("["):
         return None
     return [origin.strip() for origin in normalized.split(",") if origin.strip()]
