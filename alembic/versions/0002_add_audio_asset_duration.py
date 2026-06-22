@@ -18,13 +18,11 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     with op.batch_alter_table("audio_assets") as batch_op:
-        batch_op.add_column(sa.Column("duration_seconds", sa.Float(), nullable=True))
-    op.execute("UPDATE audio_assets SET duration_seconds = 0 WHERE duration_seconds IS NULL")
-    with op.batch_alter_table("audio_assets") as batch_op:
+        batch_op.add_column(sa.Column("duration_seconds", sa.Float(), nullable=False, server_default="0"))
         batch_op.alter_column(
             "duration_seconds",
             existing_type=sa.Float(),
-            nullable=False,
+            server_default=None,
         )
 
 

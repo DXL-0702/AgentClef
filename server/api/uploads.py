@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from uuid import UUID
 
@@ -14,6 +15,7 @@ from server.schemas.assets import (
 )
 
 router = APIRouter(prefix="/projects/{project_id}/audio", tags=["uploads"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("", response_model=UploadAudioResponse, status_code=status.HTTP_201_CREATED)
@@ -50,11 +52,14 @@ async def upload_audio(
             duration_seconds=stored_upload.duration_seconds,
         )
     except Exception:
-        await delete_stored_upload(
-            storage_root=Path(settings.file_storage_path),
-            project_id=str(project.id),
-            stored_filename=stored_upload.stored_filename,
-        )
+        try:
+            await delete_stored_upload(
+                storage_root=Path(settings.file_storage_path),
+                project_id=str(project.id),
+                stored_filename=stored_upload.stored_filename,
+            )
+        except Exception:
+            logger.exception("failed to delete stored upload after persistence failure")
         raise
 
     return UploadAudioResponse(

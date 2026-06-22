@@ -345,6 +345,25 @@ def test_upload_audio_normalizes_windows_style_filename(
     assert response.json()["audio_asset"]["original_filename"] == "demo.wav"
 
 
+def test_upload_audio_rejects_filename_over_database_limit(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = create_test_client(monkeypatch, tmp_path)
+    project = create_project(client)
+    oversized_filename = f"{'a' * 252}.wav"
+
+    response = client.post(
+        f"/projects/{project['id']}/audio",
+        files={"file": (oversized_filename, build_wav_bytes(), "audio/wav")},
+    )
+
+    assert len(oversized_filename) == 256
+    assert response.status_code == 400
+    assert response.json()["detail"] == "audio file name exceeds maximum length of 255 characters"
+    assert list(tmp_path.rglob("*")) == []
+
+
 def test_upload_audio_removes_file_when_task_creation_fails(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
@@ -368,6 +387,36 @@ def test_upload_audio_removes_file_when_task_creation_fails(
 
     assert repository.created_audio_asset is not None
     assert not list(tmp_path.rglob("*.wav"))
+
+
+def test_upload_audio_preserves_original_error_when_cleanup_fails(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    settings = make_settings(
+        monkeypatch,
+        postgres_dsn="sqlite+pysqlite:///:memory:",
+        file_storage_path=str(tmp_path),
+    )
+    app = create_app(settings, initialize_database=True)
+    repository = FailingTranscriptionJobRepository()
+    app.dependency_overrides[get_asset_repository] = lambda: repository
+
+    async def fail_delete_stored_upload(**_: object) -> None:
+        raise RuntimeError("simulated cleanup failure")
+
+    monkeypatch.setattr("server.api.uploads.delete_stored_upload", fail_delete_stored_upload)
+    client = TestClient(app)
+    project = create_project(client)
+
+    with pytest.raises(RuntimeError, match="simulated task creation failure"):
+        client.post(
+            f"/projects/{project['id']}/audio",
+            files={"file": ("demo.wav", build_wav_bytes(), "audio/wav")},
+        )
+
+    assert repository.created_audio_asset is not None
+    assert len(list(tmp_path.rglob("*.wav"))) == 1
 
 
 def test_upload_audio_rejects_unknown_project(
@@ -452,6 +501,27 @@ def test_upload_audio_rejects_corrupt_wav(
     assert response.status_code == 400
     assert response.json()["detail"] == "audio duration could not be determined"
     assert not list(tmp_path.rglob("*.wav"))
+
+
+def test_upload_audio_reports_missing_ffprobe_for_non_wav_duration(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = create_test_client(monkeypatch, tmp_path)
+    monkeypatch.setattr("server.domain.storage.get_ffprobe_path", lambda: None)
+    project = create_project(client)
+    mp3_payload = b"ID3" + (b"\x00" * 128)
+
+    response = client.post(
+        f"/projects/{project['id']}/audio",
+        files={"file": ("demo.mp3", mp3_payload, "audio/mpeg")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "ffprobe is required to determine the duration of non-WAV audio files"
+    )
+    assert not list(tmp_path.rglob("*.mp3"))
 
 
 def test_upload_audio_rejects_extension_content_mismatch(

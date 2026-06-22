@@ -12,6 +12,7 @@ from fastapi import UploadFile
 
 CHUNK_SIZE_BYTES = 1024 * 1024
 MEDIA_SIGNATURE_BYTES = 4096
+MAX_ORIGINAL_FILENAME_LENGTH = 255
 
 
 @dataclass(frozen=True)
@@ -105,6 +106,8 @@ def validate_audio_upload_metadata(file: UploadFile) -> tuple[str, str, str]:
     original_filename = Path(filename.replace("\\", "/")).name
     if not original_filename:
         raise UploadValidationError("audio file name is required")
+    if len(original_filename) > MAX_ORIGINAL_FILENAME_LENGTH:
+        raise UploadValidationError("audio file name exceeds maximum length of 255 characters")
 
     extension = Path(original_filename).suffix.lower()
     if extension not in ALLOWED_AUDIO_EXTENSIONS:
@@ -276,7 +279,9 @@ def get_ffprobe_path() -> str | None:
 def _get_ffprobe_duration_seconds(destination: Path) -> float | None:
     ffprobe_path = get_ffprobe_path()
     if ffprobe_path is None:
-        return None
+        raise UploadValidationError(
+            "ffprobe is required to determine the duration of non-WAV audio files",
+        )
 
     try:
         result = subprocess.run(

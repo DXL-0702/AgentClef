@@ -1,8 +1,10 @@
-from collections.abc import Iterator
-from typing import Protocol
+from collections.abc import Collection, Iterator
+from typing import Any, Protocol, cast
 from uuid import UUID, uuid4
 
 from fastapi import Request
+from sqlalchemy import update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -62,6 +64,14 @@ class AssetRepository(Protocol):
     ) -> TranscriptionJob | None:
         ...
 
+    def claim_transcription_job_for_dispatch(
+        self,
+        job_id: UUID,
+        allowed_statuses: Collection[TranscriptionJobStatus],
+        target_status: TranscriptionJobStatus,
+    ) -> tuple[TranscriptionJob, TranscriptionJobStatus] | None:
+        ...
+
 
 class SqlAlchemyAssetRepository:
     def __init__(self, session: Session) -> None:
@@ -74,7 +84,7 @@ class SqlAlchemyAssetRepository:
             created_at=utc_now(),
         )
         self._session.add(record)
-        self._commit_and_refresh(record)
+        self._commit_and_refresh_if_needed(record)
         return _project_from_record(record)
 
     def get_project(self, project_id: UUID) -> Project | None:
@@ -102,13 +112,13 @@ class SqlAlchemyAssetRepository:
             duration_seconds=duration_seconds,
         )
         self._session.add(record)
-        self._commit_and_refresh(record)
+        self._commit_and_refresh_if_needed(record)
         return _audio_asset_from_record(record)
 
     def create_transcription_job(self, project_id: UUID, audio_asset_id: UUID) -> TranscriptionJob:
         record = _build_transcription_job_record(project_id, audio_asset_id)
         self._session.add(record)
-        self._commit_and_refresh(record)
+        self._commit_and_refresh_if_needed(record)
         return _transcription_job_from_record(record)
 
     def create_audio_asset_with_job(
@@ -133,7 +143,7 @@ class SqlAlchemyAssetRepository:
         )
         job_record = _build_transcription_job_record(project_id, audio_asset_record.id)
         self._session.add_all([audio_asset_record, job_record])
-        self._commit_and_refresh(audio_asset_record, job_record)
+        self._commit_and_refresh_if_needed(audio_asset_record, job_record)
         return _audio_asset_from_record(audio_asset_record), _transcription_job_from_record(job_record)
 
     def get_transcription_job(self, job_id: UUID) -> TranscriptionJob | None:
@@ -150,8 +160,49 @@ class SqlAlchemyAssetRepository:
             return None
         record.status = status.value
         record.updated_at = utc_now()
-        self._commit_and_refresh(record)
+        self._commit_and_refresh_if_needed(record)
         return _transcription_job_from_record(record)
+
+    def claim_transcription_job_for_dispatch(
+        self,
+        job_id: UUID,
+        allowed_statuses: Collection[TranscriptionJobStatus],
+        target_status: TranscriptionJobStatus,
+    ) -> tuple[TranscriptionJob, TranscriptionJobStatus] | None:
+        record = self._session.get(TranscriptionJobRecord, job_id)
+        if record is None:
+            return None
+
+        previous_status = TranscriptionJobStatus(record.status)
+        updated_at = utc_now()
+        statement = (
+            update(TranscriptionJobRecord)
+            .where(
+                TranscriptionJobRecord.id == job_id,
+                TranscriptionJobRecord.status.in_([status.value for status in allowed_statuses]),
+            )
+            .values(status=target_status.value, updated_at=updated_at)
+            .execution_options(synchronize_session=False)
+        )
+        try:
+            result = cast(CursorResult[Any], self._session.execute(statement))
+            self._session.commit()
+        except SQLAlchemyError:
+            self._session.rollback()
+            raise
+        if result.rowcount != 1:
+            self._session.expire_all()
+            return None
+
+        claimed_job = TranscriptionJob(
+            id=record.id,
+            project_id=record.project_id,
+            audio_asset_id=record.audio_asset_id,
+            status=target_status,
+            created_at=record.created_at,
+            updated_at=updated_at,
+        )
+        return claimed_job, previous_status
 
     def _build_audio_asset_record(
         self,
@@ -177,14 +228,15 @@ class SqlAlchemyAssetRepository:
             created_at=utc_now(),
         )
 
-    def _commit_and_refresh(self, *records: object) -> None:
+    def _commit_and_refresh_if_needed(self, *records: object) -> None:
         try:
             self._session.commit()
         except SQLAlchemyError:
             self._session.rollback()
             raise
-        for record in records:
-            self._session.refresh(record)
+        if self._session.get_bind().dialect.name == "sqlite":
+            for record in records:
+                self._session.refresh(record)
 
 
 def _build_transcription_job_record(project_id: UUID, audio_asset_id: UUID) -> TranscriptionJobRecord:

@@ -38,27 +38,26 @@ def dispatch_transcription_job(
     request: Request,
     repository: AssetRepository = Depends(get_asset_repository),
 ) -> TranscriptionJobResponse:
-    job = repository.get_transcription_job(job_id)
-    if job is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
-    if job.status not in DISPATCHABLE_JOB_STATUSES:
+    celery_app = _get_celery_app(request)
+    claim = repository.claim_transcription_job_for_dispatch(
+        job_id,
+        allowed_statuses=DISPATCHABLE_JOB_STATUSES,
+        target_status=TranscriptionJobStatus.preprocessing,
+    )
+    if claim is None:
+        job = repository.get_transcription_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"cannot dispatch task in status: {job.status.value}",
         )
-
-    celery_app = _get_celery_app(request)
-    updated_job = repository.update_transcription_job_status(
-        job_id,
-        TranscriptionJobStatus.preprocessing,
-    )
-    if updated_job is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+    updated_job, previous_status = claim
 
     try:
         celery_app.send_task("agentclef.transcription.run_baseline", args=[str(updated_job.id)])
     except Exception:
-        repository.update_transcription_job_status(job_id, job.status)
+        repository.update_transcription_job_status(job_id, previous_status)
         raise
     return TranscriptionJobResponse.model_validate(updated_job)
 

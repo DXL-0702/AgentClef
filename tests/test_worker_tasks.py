@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from uuid import UUID
 
@@ -134,6 +135,35 @@ def test_worker_session_factory_is_cached_by_dsn(
     second_session_factory = get_worker_session_factory(settings)
 
     assert second_session_factory is first_session_factory
+
+
+def test_worker_session_factory_initializes_once_under_threads(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    clear_worker_session_factory_cache()
+    settings = make_settings(
+        monkeypatch,
+        postgres_dsn=sqlite_file_dsn(tmp_path / "worker-thread-cache.db"),
+    )
+    created_engines = []
+    real_create_database_engine = create_database_engine
+
+    def counted_create_database_engine(settings: Settings) -> object:
+        engine = real_create_database_engine(settings)
+        created_engines.append(engine)
+        return engine
+
+    monkeypatch.setattr(
+        "worker.tasks.transcription.create_database_engine",
+        counted_create_database_engine,
+    )
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        session_factories = list(executor.map(lambda _: get_worker_session_factory(settings), range(16)))
+
+    assert len(created_engines) == 1
+    assert all(session_factory is session_factories[0] for session_factory in session_factories)
 
 
 def test_run_transcription_baseline_task_marks_job_preprocessing(

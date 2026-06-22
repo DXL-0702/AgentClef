@@ -1,3 +1,4 @@
+from threading import Lock
 from uuid import UUID
 
 from server.config import Settings, get_settings
@@ -8,18 +9,22 @@ from worker.app import celery_app
 
 
 _session_factories: dict[str, SessionFactory] = {}
+_session_factories_lock = Lock()
 
 
 def get_worker_session_factory(settings: Settings) -> SessionFactory:
     dsn = settings.postgres_dsn
     if dsn not in _session_factories:
-        engine = create_database_engine(settings)
-        _session_factories[dsn] = create_session_factory(engine)
+        with _session_factories_lock:
+            if dsn not in _session_factories:
+                engine = create_database_engine(settings)
+                _session_factories[dsn] = create_session_factory(engine)
     return _session_factories[dsn]
 
 
 def clear_worker_session_factory_cache() -> None:
-    _session_factories.clear()
+    with _session_factories_lock:
+        _session_factories.clear()
 
 
 def mark_transcription_job_status(
