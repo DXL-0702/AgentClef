@@ -148,15 +148,13 @@ AgentClef/
 
 ```bash
 # 后端
-cd server
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
-uvicorn main:app --reload
+uvicorn server.main:app --reload
 
 # Worker
-cd worker
-celery -A app worker --loglevel=info
+celery -A worker.app:celery_app worker --loglevel=info
 
 # 前端
 cd web
