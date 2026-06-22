@@ -51,6 +51,7 @@ class AudioAssetResponse(BaseModel):
     content_type: str
     extension: str
     size_bytes: int
+    duration_seconds: float
     status: AudioAssetStatus
     created_at: datetime
 

@@ -32,6 +32,7 @@ class AssetRepository(Protocol):
         content_type: str,
         extension: str,
         size_bytes: int,
+        duration_seconds: float,
     ) -> AudioAsset:
         ...
 
@@ -47,6 +48,7 @@ class AssetRepository(Protocol):
         content_type: str,
         extension: str,
         size_bytes: int,
+        duration_seconds: float,
     ) -> tuple[AudioAsset, TranscriptionJob]:
         ...
 
@@ -88,6 +90,7 @@ class SqlAlchemyAssetRepository:
         content_type: str,
         extension: str,
         size_bytes: int,
+        duration_seconds: float,
     ) -> AudioAsset:
         record = self._build_audio_asset_record(
             project_id=project_id,
@@ -96,6 +99,7 @@ class SqlAlchemyAssetRepository:
             content_type=content_type,
             extension=extension,
             size_bytes=size_bytes,
+            duration_seconds=duration_seconds,
         )
         self._session.add(record)
         self._commit_and_refresh(record)
@@ -116,6 +120,7 @@ class SqlAlchemyAssetRepository:
         content_type: str,
         extension: str,
         size_bytes: int,
+        duration_seconds: float,
     ) -> tuple[AudioAsset, TranscriptionJob]:
         audio_asset_record = self._build_audio_asset_record(
             project_id=project_id,
@@ -124,6 +129,7 @@ class SqlAlchemyAssetRepository:
             content_type=content_type,
             extension=extension,
             size_bytes=size_bytes,
+            duration_seconds=duration_seconds,
         )
         job_record = _build_transcription_job_record(project_id, audio_asset_record.id)
         self._session.add_all([audio_asset_record, job_record])
@@ -156,6 +162,7 @@ class SqlAlchemyAssetRepository:
         content_type: str,
         extension: str,
         size_bytes: int,
+        duration_seconds: float,
     ) -> AudioAssetRecord:
         return AudioAssetRecord(
             id=uuid4(),
@@ -165,6 +172,7 @@ class SqlAlchemyAssetRepository:
             content_type=content_type,
             extension=extension,
             size_bytes=size_bytes,
+            duration_seconds=duration_seconds,
             status=AudioAssetStatus.uploaded.value,
             created_at=utc_now(),
         )
@@ -208,6 +216,7 @@ def _audio_asset_from_record(record: AudioAssetRecord) -> AudioAsset:
         content_type=record.content_type,
         extension=record.extension,
         size_bytes=record.size_bytes,
+        duration_seconds=record.duration_seconds,
         status=AudioAssetStatus(record.status),
         created_at=record.created_at,
     )

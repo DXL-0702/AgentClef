@@ -34,6 +34,7 @@ async def upload_audio(
             storage_root=Path(settings.file_storage_path),
             project_id=str(project.id),
             max_bytes=max_bytes,
+            max_seconds=settings.upload_max_seconds,
         )
     except UploadValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -46,6 +47,7 @@ async def upload_audio(
             content_type=stored_upload.content_type,
             extension=stored_upload.extension,
             size_bytes=stored_upload.size_bytes,
+            duration_seconds=stored_upload.duration_seconds,
         )
     except Exception:
         await delete_stored_upload(

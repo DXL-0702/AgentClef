@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import TypeEngine, Uuid
@@ -37,6 +37,7 @@ class AudioAssetRecord(Base):
     content_type: Mapped[str] = mapped_column(String(120), nullable=False)
     extension: Mapped[str] = mapped_column(String(16), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    duration_seconds: Mapped[float] = mapped_column(Float, nullable=False)
     status: Mapped[str] = mapped_column(String(48), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
