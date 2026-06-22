@@ -1,9 +1,8 @@
-from datetime import datetime
 from enum import StrEnum
 from typing import Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 
 class StrictSchema(BaseModel):
@@ -189,7 +188,7 @@ class SelectionRange(StrictSchema):
 
     @model_validator(mode="after")
     def validate_target(self) -> Self:
-        if self.target_type is SelectionTargetType.note:
+        if self.target_type == SelectionTargetType.note:
             if len(self.note_ids) != 1:
                 raise ValueError("note selection must include exactly one note_id")
             if self.chord_event_id or self.uncertainty_marker_id or self.measure_range:
@@ -197,7 +196,7 @@ class SelectionRange(StrictSchema):
                     "note selection must not include chord_event_id, "
                     "uncertainty_marker_id, or measure_range",
                 )
-        elif self.target_type is SelectionTargetType.notes:
+        elif self.target_type == SelectionTargetType.notes:
             if not self.note_ids:
                 raise ValueError("notes selection must include at least one note_id")
             if self.chord_event_id or self.uncertainty_marker_id or self.measure_range:
@@ -205,7 +204,7 @@ class SelectionRange(StrictSchema):
                     "notes selection must not include chord_event_id, "
                     "uncertainty_marker_id, or measure_range",
                 )
-        elif self.target_type is SelectionTargetType.chord:
+        elif self.target_type == SelectionTargetType.chord:
             if self.chord_event_id is None:
                 raise ValueError("chord selection must include chord_event_id")
             if self.note_ids or self.uncertainty_marker_id or self.measure_range:
@@ -213,7 +212,7 @@ class SelectionRange(StrictSchema):
                     "chord selection must not include note_ids, "
                     "uncertainty_marker_id, or measure_range",
                 )
-        elif self.target_type is SelectionTargetType.uncertainty_marker:
+        elif self.target_type == SelectionTargetType.uncertainty_marker:
             if self.uncertainty_marker_id is None:
                 raise ValueError("uncertainty_marker selection must include uncertainty_marker_id")
             if self.note_ids or self.chord_event_id or self.measure_range:
@@ -221,7 +220,7 @@ class SelectionRange(StrictSchema):
                     "uncertainty_marker selection must not include note_ids, "
                     "chord_event_id, or measure_range",
                 )
-        elif self.target_type is SelectionTargetType.measure_range:
+        elif self.target_type == SelectionTargetType.measure_range:
             if self.measure_range is None:
                 raise ValueError("measure_range selection must include measure_range")
             if self.note_ids or self.chord_event_id or self.uncertainty_marker_id:
@@ -229,7 +228,7 @@ class SelectionRange(StrictSchema):
                     "measure_range selection must not include note_ids, "
                     "chord_event_id, or uncertainty_marker_id",
                 )
-        elif self.target_type is SelectionTargetType.time_range:
+        elif self.target_type == SelectionTargetType.time_range:
             if self.audio_range is None and self.beat_range is None:
                 raise ValueError("time_range selection must include audio_range or beat_range")
             if self.note_ids or self.chord_event_id or self.uncertainty_marker_id or self.measure_range:
@@ -278,23 +277,23 @@ class CandidateEditOperation(StrictSchema):
 
     @model_validator(mode="after")
     def validate_operation_payload(self) -> Self:
-        if self.type is CandidateEditType.change_pitch:
+        if self.type == CandidateEditType.change_pitch:
             self._require_note_id()
             if self.pitch is None:
                 raise ValueError("change_pitch operation must include pitch")
-        if self.type is CandidateEditType.change_duration:
+        if self.type == CandidateEditType.change_duration:
             self._require_note_id()
             if self.duration_beats is None:
                 raise ValueError("change_duration operation must include duration_beats")
-        if self.type is CandidateEditType.move_note:
+        if self.type == CandidateEditType.move_note:
             self._require_note_id()
             if self.start_beat is None:
                 raise ValueError("move_note operation must include start_beat")
-        if self.type is CandidateEditType.add_note and self.note_event is None:
+        if self.type == CandidateEditType.add_note and self.note_event is None:
             raise ValueError("add_note operation must include note_event")
-        if self.type is CandidateEditType.delete_note:
+        if self.type == CandidateEditType.delete_note:
             self._require_note_id()
-        if self.type is CandidateEditType.change_chord:
+        if self.type == CandidateEditType.change_chord:
             if self.chord_event_id is None:
                 raise ValueError("change_chord operation must include chord_event_id")
             if self.chord_label is None:
@@ -314,7 +313,7 @@ class CandidateEdit(StrictSchema):
     summary: str = Field(min_length=1, max_length=255)
     affected_range: SelectionRange
     operations: list[CandidateEditOperation] = Field(min_length=1)
-    created_at: datetime
+    created_at: AwareDatetime
 
 
 class Revision(StrictSchema):
@@ -326,7 +325,7 @@ class Revision(StrictSchema):
     affected_range: SelectionRange
     operations: list[CandidateEditOperation] = Field(default_factory=list)
     candidate_edit_id: UUID | None = None
-    created_at: datetime
+    created_at: AwareDatetime
 
 
 class DraftScore(StrictSchema):
@@ -338,8 +337,8 @@ class DraftScore(StrictSchema):
     notes: list[NoteEvent] = Field(default_factory=list)
     chords: list[ChordEvent] = Field(default_factory=list)
     uncertainty_markers: list[UncertaintyMarker] = Field(default_factory=list)
-    created_at: datetime
-    updated_at: datetime
+    created_at: AwareDatetime
+    updated_at: AwareDatetime
 
     @model_validator(mode="after")
     def validate_event_track_references(self) -> Self:
@@ -351,7 +350,7 @@ class DraftScore(StrictSchema):
             raise ValueError("Track IDs must be unique within DraftScore")
 
         tracks_by_id = {track.id: track for track in self.tracks}
-        if not any(track.kind is TrackKind.main_melody for track in self.tracks):
+        if not any(track.kind == TrackKind.main_melody for track in self.tracks):
             raise ValueError("DraftScore must include a main_melody track")
 
         note_ids: set[str] = set()
@@ -361,7 +360,7 @@ class DraftScore(StrictSchema):
             note_ids.add(note.id)
             if note.track_id not in tracks_by_id:
                 raise ValueError(f"NoteEvent references unknown track_id: {note.track_id}")
-            if tracks_by_id[note.track_id].kind is TrackKind.chords:
+            if tracks_by_id[note.track_id].kind == TrackKind.chords:
                 raise ValueError("NoteEvent must not reference a chords track")
 
         chord_ids: set[str] = set()
@@ -371,7 +370,7 @@ class DraftScore(StrictSchema):
             chord_ids.add(chord.id)
             if chord.track_id not in tracks_by_id:
                 raise ValueError(f"ChordEvent references unknown track_id: {chord.track_id}")
-            if tracks_by_id[chord.track_id].kind is not TrackKind.chords:
+            if tracks_by_id[chord.track_id].kind != TrackKind.chords:
                 raise ValueError("ChordEvent must reference a chords track")
 
         for marker in self.uncertainty_markers:

@@ -94,6 +94,33 @@ def test_draft_score_rejects_updated_at_before_created_at() -> None:
         DraftScore.model_validate(invalid_payload)
 
 
+def test_draft_score_rejects_naive_timestamp() -> None:
+    bundle = load_fixture_bundle()
+    invalid_payload = deepcopy(bundle["draft_score"])
+    invalid_payload["created_at"] = "2026-06-22T13:50:00"
+
+    with pytest.raises(ValueError, match="timezone"):
+        DraftScore.model_validate(invalid_payload)
+
+
+def test_candidate_edit_rejects_naive_timestamp() -> None:
+    bundle = load_fixture_bundle()
+    invalid_payload = deepcopy(bundle["candidate_edit"])
+    invalid_payload["created_at"] = "2026-06-22T13:50:00"
+
+    with pytest.raises(ValueError, match="timezone"):
+        CandidateEdit.model_validate(invalid_payload)
+
+
+def test_revision_rejects_naive_timestamp() -> None:
+    bundle = load_fixture_bundle()
+    invalid_payload = deepcopy(bundle["revision"])
+    invalid_payload["created_at"] = "2026-06-22T13:50:00"
+
+    with pytest.raises(ValueError, match="timezone"):
+        Revision.model_validate(invalid_payload)
+
+
 def test_draft_score_rejects_duplicate_track_id() -> None:
     bundle = load_fixture_bundle()
     invalid_payload = deepcopy(bundle["draft_score"])
