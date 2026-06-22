@@ -1,6 +1,7 @@
 import asyncio
 import io
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from fastapi import UploadFile
@@ -9,8 +10,40 @@ from pytest import MonkeyPatch
 from starlette.datastructures import Headers
 
 from server.app import create_app
+from server.domain.assets import AudioAsset, TranscriptionJob
+from server.domain.repository import AssetRepository
 from server.domain.storage import UploadValidationError, store_audio_upload
 from tests.settings_helpers import make_settings
+
+
+class FailingTranscriptionJobRepository(AssetRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.created_audio_asset: AudioAsset | None = None
+
+    def create_audio_asset(
+        self,
+        *,
+        project_id: UUID,
+        original_filename: str,
+        stored_filename: str,
+        content_type: str,
+        extension: str,
+        size_bytes: int,
+    ) -> AudioAsset:
+        audio_asset = super().create_audio_asset(
+            project_id=project_id,
+            original_filename=original_filename,
+            stored_filename=stored_filename,
+            content_type=content_type,
+            extension=extension,
+            size_bytes=size_bytes,
+        )
+        self.created_audio_asset = audio_asset
+        return audio_asset
+
+    def create_transcription_job(self, project_id: UUID, audio_asset_id: UUID) -> TranscriptionJob:
+        raise RuntimeError("simulated task creation failure")
 
 
 def create_test_client(monkeypatch: MonkeyPatch, storage_path: Path, upload_max_mb: int = 1) -> TestClient:
@@ -84,6 +117,43 @@ def test_upload_audio_creates_asset_and_task(
     task_response = client.get(f"/tasks/{payload['transcription_job']['id']}")
     assert task_response.status_code == 200
     assert task_response.json() == payload["transcription_job"]
+
+
+def test_upload_audio_normalizes_windows_style_filename(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = create_test_client(monkeypatch, tmp_path)
+    project = create_project(client)
+
+    response = client.post(
+        f"/projects/{project['id']}/audio",
+        files={"file": (r"..\unsafe\demo.wav", b"RIFFdemo-audio", "audio/wav")},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["audio_asset"]["original_filename"] == "demo.wav"
+
+
+def test_upload_audio_removes_file_when_task_creation_fails(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    settings = make_settings(monkeypatch, file_storage_path=str(tmp_path))
+    app = create_app(settings)
+    repository = FailingTranscriptionJobRepository()
+    app.state.repository = repository
+    client = TestClient(app)
+    project = create_project(client)
+
+    with pytest.raises(RuntimeError, match="simulated task creation failure"):
+        client.post(
+            f"/projects/{project['id']}/audio",
+            files={"file": ("demo.wav", b"RIFFdemo-audio", "audio/wav")},
+        )
+
+    assert repository.created_audio_asset is not None
+    assert not list(tmp_path.rglob("*.wav"))
 
 
 def test_upload_audio_rejects_unknown_project(

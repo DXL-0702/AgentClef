@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from server.config import Settings, get_settings
 from server.domain.repository import AssetRepository, get_asset_repository
-from server.domain.storage import UploadValidationError, store_audio_upload
+from server.domain.storage import UploadValidationError, delete_stored_upload, store_audio_upload
 from server.schemas.assets import (
     AudioAssetResponse,
     ProjectResponse,
@@ -38,15 +38,23 @@ async def upload_audio(
     except UploadValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    audio_asset = repository.create_audio_asset(
-        project_id=project.id,
-        original_filename=stored_upload.original_filename,
-        stored_filename=stored_upload.stored_filename,
-        content_type=stored_upload.content_type,
-        extension=stored_upload.extension,
-        size_bytes=stored_upload.size_bytes,
-    )
-    job = repository.create_transcription_job(project_id=project.id, audio_asset_id=audio_asset.id)
+    try:
+        audio_asset = repository.create_audio_asset(
+            project_id=project.id,
+            original_filename=stored_upload.original_filename,
+            stored_filename=stored_upload.stored_filename,
+            content_type=stored_upload.content_type,
+            extension=stored_upload.extension,
+            size_bytes=stored_upload.size_bytes,
+        )
+        job = repository.create_transcription_job(project_id=project.id, audio_asset_id=audio_asset.id)
+    except Exception:
+        await delete_stored_upload(
+            storage_root=Path(settings.file_storage_path),
+            project_id=str(project.id),
+            stored_filename=stored_upload.stored_filename,
+        )
+        raise
 
     return UploadAudioResponse(
         project=ProjectResponse.model_validate(project),

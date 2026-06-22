@@ -37,6 +37,14 @@ ALLOWED_AUDIO_CONTENT_TYPES = {
 CHUNK_SIZE_BYTES = 1024 * 1024
 
 
+def _mkdir_parents(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+
+
+def _unlink_missing_ok(path: Path) -> None:
+    path.unlink(missing_ok=True)
+
+
 class UploadValidationError(ValueError):
     pass
 
@@ -59,7 +67,8 @@ class StoredUpload:
 
 
 def validate_audio_upload_metadata(file: UploadFile) -> tuple[str, str, str]:
-    original_filename = Path(file.filename or "").name
+    filename = file.filename or ""
+    original_filename = Path(filename.replace("\\", "/")).name
     if not original_filename:
         raise UploadValidationError("audio file name is required")
 
@@ -89,7 +98,7 @@ async def store_audio_upload(
         if not project_dir.is_relative_to(storage_root_resolved):
             raise UploadValidationError("invalid storage path")
 
-        project_dir.mkdir(parents=True, exist_ok=True)
+        await anyio.to_thread.run_sync(_mkdir_parents, project_dir)
 
         stored_filename = f"{uuid4().hex}{extension}"
         destination = (project_dir / stored_filename).resolve()
@@ -105,7 +114,7 @@ async def store_audio_upload(
                 await output.write(chunk)
 
         if size_bytes == 0:
-            destination.unlink(missing_ok=True)
+            await anyio.to_thread.run_sync(_unlink_missing_ok, destination)
             raise UploadValidationError("audio file must not be empty")
 
         return StoredUpload(
@@ -117,7 +126,29 @@ async def store_audio_upload(
         )
     except Exception:
         if destination is not None:
-            destination.unlink(missing_ok=True)
+            await anyio.to_thread.run_sync(_unlink_missing_ok, destination)
         raise
     finally:
         await file.close()
+
+
+async def delete_stored_upload(
+    *,
+    storage_root: Path,
+    project_id: str,
+    stored_filename: str,
+) -> None:
+    project_dir = (storage_root / "projects" / project_id / "audio").resolve()
+    storage_root_resolved = storage_root.resolve()
+    if not project_dir.is_relative_to(storage_root_resolved):
+        raise UploadValidationError("invalid storage path")
+
+    normalized_stored_filename = Path(stored_filename.replace("\\", "/")).name
+    if normalized_stored_filename != stored_filename:
+        raise UploadValidationError("invalid stored file name")
+
+    destination = (project_dir / stored_filename).resolve()
+    if not destination.is_relative_to(project_dir):
+        raise UploadValidationError("invalid destination path")
+
+    await anyio.to_thread.run_sync(_unlink_missing_ok, destination)
