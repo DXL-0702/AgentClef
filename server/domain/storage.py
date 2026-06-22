@@ -90,23 +90,14 @@ class UploadValidationError(ValueError):
     pass
 
 
+@dataclass(frozen=True)
 class StoredUpload:
-    def __init__(
-        self,
-        *,
-        original_filename: str,
-        stored_filename: str,
-        content_type: str,
-        extension: str,
-        size_bytes: int,
-        duration_seconds: float,
-    ) -> None:
-        self.original_filename = original_filename
-        self.stored_filename = stored_filename
-        self.content_type = content_type
-        self.extension = extension
-        self.size_bytes = size_bytes
-        self.duration_seconds = duration_seconds
+    original_filename: str
+    stored_filename: str
+    content_type: str
+    extension: str
+    size_bytes: int
+    duration_seconds: float
 
 
 def validate_audio_upload_metadata(file: UploadFile) -> tuple[str, str, str]:

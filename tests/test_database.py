@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, inspect
 
 from server.db import create_database_engine, create_database_schema, create_session_factory
 from server.domain.repository import SqlAlchemyAssetRepository
+from server.models import AudioAssetRecord
 from server.schemas.assets import ProjectCreateRequest
 from tests.settings_helpers import make_settings
 
@@ -38,6 +39,8 @@ def test_alembic_upgrade_creates_v01_core_tables(tmp_path: Path) -> None:
     assert EXPECTED_CORE_TABLES.issubset(set(inspector.get_table_names()))
     audio_asset_columns = {column["name"] for column in inspector.get_columns("audio_assets")}
     assert "duration_seconds" in audio_asset_columns
+    orm_audio_asset_columns = set(AudioAssetRecord.__table__.columns.keys())
+    assert audio_asset_columns == orm_audio_asset_columns
 
 
 def test_sqlalchemy_repository_persists_upload_foundation_records(
