@@ -70,7 +70,7 @@ Contains:
 
 - Original file metadata.
 - Normalized audio metadata.
-- Duration.
+- Duration in seconds as `duration_seconds`.
 - Format.
 - Processing status.
 - Storage location.

@@ -1,5 +1,6 @@
 import asyncio
 import io
+import wave
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -16,6 +17,24 @@ from server.domain.repository import SqlAlchemyAssetRepository, get_asset_reposi
 from server.domain.storage import UploadValidationError, store_audio_upload
 from server.schemas.assets import AudioAssetStatus, ProjectCreateRequest, TranscriptionJobStatus, utc_now
 from tests.settings_helpers import make_settings
+
+
+DEMO_WAV_DURATION_SECONDS = 0.25
+
+
+def build_wav_bytes(
+    *,
+    duration_seconds: float = DEMO_WAV_DURATION_SECONDS,
+    sample_rate: int = 8_000,
+) -> bytes:
+    frame_count = int(duration_seconds * sample_rate)
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(b"\x00\x00" * frame_count)
+    return buffer.getvalue()
 
 
 class FakeCeleryApp:
@@ -55,6 +74,7 @@ class FailingTranscriptionJobRepository:
         content_type: str,
         extension: str,
         size_bytes: int,
+        duration_seconds: float,
     ) -> tuple[AudioAsset, TranscriptionJob]:
         self.created_audio_asset = AudioAsset(
             id=uuid4(),
@@ -64,18 +84,25 @@ class FailingTranscriptionJobRepository:
             content_type=content_type,
             extension=extension,
             size_bytes=size_bytes,
+            duration_seconds=duration_seconds,
             status=AudioAssetStatus.uploaded,
             created_at=utc_now(),
         )
         raise RuntimeError("simulated task creation failure")
 
 
-def create_test_client(monkeypatch: MonkeyPatch, storage_path: Path, upload_max_mb: int = 1) -> TestClient:
+def create_test_client(
+    monkeypatch: MonkeyPatch,
+    storage_path: Path,
+    upload_max_mb: int = 1,
+    upload_max_seconds: int = 300,
+) -> TestClient:
     settings = make_settings(
         monkeypatch,
         postgres_dsn="sqlite+pysqlite:///:memory:",
         file_storage_path=str(storage_path),
         upload_max_mb=upload_max_mb,
+        upload_max_seconds=upload_max_seconds,
     )
     return TestClient(create_app(settings, initialize_database=True))
 
@@ -142,10 +169,11 @@ def test_upload_audio_creates_asset_and_task(
 ) -> None:
     client = create_test_client(monkeypatch, tmp_path)
     project = create_project(client)
+    audio_payload = build_wav_bytes()
 
     response = client.post(
         f"/projects/{project['id']}/audio",
-        files={"file": ("../unsafe/demo.wav", b"RIFFdemo-audio", "audio/wav")},
+        files={"file": ("../unsafe/demo.wav", audio_payload, "audio/wav")},
     )
 
     assert response.status_code == 201
@@ -154,7 +182,8 @@ def test_upload_audio_creates_asset_and_task(
     assert payload["audio_asset"]["original_filename"] == "demo.wav"
     assert payload["audio_asset"]["extension"] == ".wav"
     assert payload["audio_asset"]["content_type"] == "audio/wav"
-    assert payload["audio_asset"]["size_bytes"] == len(b"RIFFdemo-audio")
+    assert payload["audio_asset"]["size_bytes"] == len(audio_payload)
+    assert payload["audio_asset"]["duration_seconds"] == pytest.approx(DEMO_WAV_DURATION_SECONDS)
     assert payload["audio_asset"]["status"] == "uploaded"
     assert payload["transcription_job"]["status"] == "uploaded"
     assert payload["transcription_job"]["audio_asset_id"] == payload["audio_asset"]["id"]
@@ -181,7 +210,7 @@ def test_dispatch_transcription_job_sends_worker_task(
     project = create_project(client)
     upload_response = client.post(
         f"/projects/{project['id']}/audio",
-        files={"file": ("demo.wav", b"RIFFdemo-audio", "audio/wav")},
+        files={"file": ("demo.wav", build_wav_bytes(), "audio/wav")},
     )
     job = upload_response.json()["transcription_job"]
 
@@ -211,7 +240,7 @@ def test_dispatch_transcription_job_rejects_duplicate_after_status_update(
     project = create_project(client)
     upload_response = client.post(
         f"/projects/{project['id']}/audio",
-        files={"file": ("demo.wav", b"RIFFdemo-audio", "audio/wav")},
+        files={"file": ("demo.wav", build_wav_bytes(), "audio/wav")},
     )
     job = upload_response.json()["transcription_job"]
 
@@ -237,7 +266,7 @@ def test_dispatch_transcription_job_rejects_active_task(
     project = create_project(client)
     upload_response = client.post(
         f"/projects/{project['id']}/audio",
-        files={"file": ("demo.wav", b"RIFFdemo-audio", "audio/wav")},
+        files={"file": ("demo.wav", build_wav_bytes(), "audio/wav")},
     )
     job = upload_response.json()["transcription_job"]
     update_job_status(app, job["id"], TranscriptionJobStatus.preprocessing)
@@ -260,7 +289,7 @@ def test_dispatch_transcription_job_allows_failed_task_retry(
     project = create_project(client)
     upload_response = client.post(
         f"/projects/{project['id']}/audio",
-        files={"file": ("demo.wav", b"RIFFdemo-audio", "audio/wav")},
+        files={"file": ("demo.wav", build_wav_bytes(), "audio/wav")},
     )
     job = upload_response.json()["transcription_job"]
     update_job_status(app, job["id"], TranscriptionJobStatus.transcription_failed)
@@ -288,7 +317,7 @@ def test_dispatch_transcription_job_rolls_back_status_when_worker_dispatch_fails
     project = create_project(client)
     upload_response = client.post(
         f"/projects/{project['id']}/audio",
-        files={"file": ("demo.wav", b"RIFFdemo-audio", "audio/wav")},
+        files={"file": ("demo.wav", build_wav_bytes(), "audio/wav")},
     )
     job = upload_response.json()["transcription_job"]
     update_job_status(app, job["id"], TranscriptionJobStatus.transcription_failed)
@@ -309,7 +338,7 @@ def test_upload_audio_normalizes_windows_style_filename(
 
     response = client.post(
         f"/projects/{project['id']}/audio",
-        files={"file": (r"..\unsafe\demo.wav", b"RIFFdemo-audio", "audio/wav")},
+        files={"file": (r"..\unsafe\demo.wav", build_wav_bytes(), "audio/wav")},
     )
 
     assert response.status_code == 201
@@ -334,7 +363,7 @@ def test_upload_audio_removes_file_when_task_creation_fails(
     with pytest.raises(RuntimeError, match="simulated task creation failure"):
         client.post(
             f"/projects/{project['id']}/audio",
-            files={"file": ("demo.wav", b"RIFFdemo-audio", "audio/wav")},
+            files={"file": ("demo.wav", build_wav_bytes(), "audio/wav")},
         )
 
     assert repository.created_audio_asset is not None
@@ -349,7 +378,7 @@ def test_upload_audio_rejects_unknown_project(
 
     response = client.post(
         "/projects/00000000-0000-0000-0000-000000000000/audio",
-        files={"file": ("demo.wav", b"RIFFdemo-audio", "audio/wav")},
+        files={"file": ("demo.wav", build_wav_bytes(), "audio/wav")},
     )
 
     assert response.status_code == 404
@@ -365,7 +394,7 @@ def test_upload_audio_rejects_unsupported_extension(
 
     response = client.post(
         f"/projects/{project['id']}/audio",
-        files={"file": ("demo.txt", b"not audio", "audio/wav")},
+        files={"file": ("demo.txt", build_wav_bytes(), "audio/wav")},
     )
 
     assert response.status_code == 400
@@ -382,12 +411,63 @@ def test_upload_audio_rejects_unsupported_content_type(
 
     response = client.post(
         f"/projects/{project['id']}/audio",
-        files={"file": ("demo.wav", b"RIFFdemo-audio", "text/plain")},
+        files={"file": ("demo.wav", build_wav_bytes(), "text/plain")},
     )
 
     assert response.status_code == 400
     assert response.json()["detail"] == "unsupported audio content type"
     assert list(tmp_path.rglob("*")) == []
+
+
+def test_upload_audio_rejects_actual_media_type_mismatch(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = create_test_client(monkeypatch, tmp_path)
+    project = create_project(client)
+
+    response = client.post(
+        f"/projects/{project['id']}/audio",
+        files={"file": ("demo.wav", b"not audio", "audio/wav")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "unsupported actual audio media type"
+    assert not list(tmp_path.rglob("*.wav"))
+
+
+def test_upload_audio_rejects_extension_content_mismatch(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = create_test_client(monkeypatch, tmp_path)
+    project = create_project(client)
+
+    response = client.post(
+        f"/projects/{project['id']}/audio",
+        files={"file": ("demo.mp3", build_wav_bytes(), "audio/mpeg")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "audio file content does not match extension"
+    assert not list(tmp_path.rglob("*.mp3"))
+
+
+def test_upload_audio_rejects_declared_content_type_mismatch(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = create_test_client(monkeypatch, tmp_path)
+    project = create_project(client)
+
+    response = client.post(
+        f"/projects/{project['id']}/audio",
+        files={"file": ("demo.wav", build_wav_bytes(), "audio/mpeg")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "audio content type does not match file content"
+    assert not list(tmp_path.rglob("*.wav"))
 
 
 def test_upload_audio_rejects_empty_file(
@@ -404,6 +484,23 @@ def test_upload_audio_rejects_empty_file(
 
     assert response.status_code == 400
     assert response.json()["detail"] == "audio file must not be empty"
+    assert not list(tmp_path.rglob("*.wav"))
+
+
+def test_upload_audio_rejects_file_over_duration_limit(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = create_test_client(monkeypatch, tmp_path, upload_max_seconds=1)
+    project = create_project(client)
+
+    response = client.post(
+        f"/projects/{project['id']}/audio",
+        files={"file": ("long.wav", build_wav_bytes(duration_seconds=2.0), "audio/wav")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "audio file exceeds upload duration limit"
     assert not list(tmp_path.rglob("*.wav"))
 
 
@@ -429,7 +526,7 @@ def test_store_audio_upload_rejects_project_path_traversal(tmp_path: Path) -> No
     storage_root = tmp_path / "storage"
     outside_dir = tmp_path / "outside"
     file = UploadFile(
-        file=io.BytesIO(b"RIFFdemo-audio"),
+        file=io.BytesIO(build_wav_bytes()),
         filename="demo.wav",
         headers=Headers({"content-type": "audio/wav"}),
     )
@@ -441,6 +538,7 @@ def test_store_audio_upload_rejects_project_path_traversal(tmp_path: Path) -> No
                 storage_root=storage_root,
                 project_id="../../outside",
                 max_bytes=1024,
+                max_seconds=1,
             )
         )
 

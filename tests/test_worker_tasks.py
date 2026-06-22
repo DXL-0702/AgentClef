@@ -37,6 +37,7 @@ def create_transcription_job(settings: Settings) -> str:
             content_type="audio/wav",
             extension=".wav",
             size_bytes=128,
+            duration_seconds=0.25,
         )
         return str(job.id)
 
