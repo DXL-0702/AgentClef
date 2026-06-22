@@ -90,7 +90,7 @@ class UploadValidationError(ValueError):
     pass
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class StoredUpload:
     original_filename: str
     stored_filename: str

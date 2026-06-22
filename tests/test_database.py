@@ -39,7 +39,7 @@ def test_alembic_upgrade_creates_v01_core_tables(tmp_path: Path) -> None:
     assert EXPECTED_CORE_TABLES.issubset(set(inspector.get_table_names()))
     audio_asset_columns = {column["name"] for column in inspector.get_columns("audio_assets")}
     assert "duration_seconds" in audio_asset_columns
-    orm_audio_asset_columns = set(AudioAssetRecord.__table__.columns.keys())
+    orm_audio_asset_columns = {column.name for column in AudioAssetRecord.__table__.columns}
     assert audio_asset_columns == orm_audio_asset_columns
 
 
