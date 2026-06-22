@@ -71,6 +71,18 @@ def test_settings_parse_quoted_comma_separated_cors_origins(monkeypatch: MonkeyP
     assert settings.cors_origins == ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 
+def test_settings_parse_individually_quoted_cors_origins(monkeypatch: MonkeyPatch) -> None:
+    clear_agentclef_env(monkeypatch)
+    monkeypatch.setenv(
+        "AGENTCLEF_CORS_ORIGINS",
+        '"http://localhost:5173", \'http://127.0.0.1:5173\'',
+    )
+
+    settings = make_settings_from_env()
+
+    assert settings.cors_origins == ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+
 def test_settings_require_api_key_when_llm_provider_is_enabled(monkeypatch: MonkeyPatch) -> None:
     with pytest.raises(ValidationError, match="llm_api_key must be provided"):
         make_settings(monkeypatch, llm_provider="openai", llm_api_key=" ")
