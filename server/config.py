@@ -1,3 +1,4 @@
+import json
 from functools import lru_cache
 from typing import Any, cast
 
@@ -19,8 +20,11 @@ def parse_cors_origins_env(value: str) -> list[str] | None:
         or (normalized.startswith('"') and normalized.endswith('"'))
     ):
         normalized = normalized[1:-1].strip()
-    if not normalized or normalized.startswith("["):
+    if not normalized:
         return None
+    if normalized.startswith("["):
+        parsed = json.loads(normalized)
+        return parsed if isinstance(parsed, list) else None
     origins: list[str] = []
     for origin in normalized.split(","):
         cleaned = origin.strip().strip("'\"").strip()

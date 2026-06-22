@@ -50,6 +50,18 @@ def test_settings_parse_cors_origins_from_json_env(monkeypatch: MonkeyPatch) -> 
     assert settings.cors_origins == ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 
+def test_settings_parse_quoted_json_cors_origins(monkeypatch: MonkeyPatch) -> None:
+    clear_agentclef_env(monkeypatch)
+    monkeypatch.setenv(
+        "AGENTCLEF_CORS_ORIGINS",
+        '\'["http://localhost:5173","http://127.0.0.1:5173"]\'',
+    )
+
+    settings = make_settings_from_env()
+
+    assert settings.cors_origins == ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+
 def test_settings_parse_cors_origins_from_comma_separated_env(monkeypatch: MonkeyPatch) -> None:
     clear_agentclef_env(monkeypatch)
     monkeypatch.setenv("AGENTCLEF_CORS_ORIGINS", "http://localhost:5173, http://127.0.0.1:5173")
