@@ -115,6 +115,7 @@ def test_sqlalchemy_repository_claims_dispatchable_job_once(
             allowed_statuses=allowed_statuses,
             target_status=TranscriptionJobStatus.preprocessing,
         )
+        claimed_job_in_same_session = repository.get_transcription_job(job.id)
     with session_factory() as session:
         repository = SqlAlchemyAssetRepository(session)
         second_claim = repository.claim_transcription_job_for_dispatch(
@@ -129,6 +130,8 @@ def test_sqlalchemy_repository_claims_dispatchable_job_once(
     assert claimed_job.id == job.id
     assert claimed_job.status == TranscriptionJobStatus.preprocessing
     assert previous_status == TranscriptionJobStatus.uploaded
+    assert claimed_job_in_same_session is not None
+    assert claimed_job_in_same_session.status == TranscriptionJobStatus.preprocessing
     assert second_claim is None
     assert persisted_job is not None
     assert persisted_job.status == TranscriptionJobStatus.preprocessing

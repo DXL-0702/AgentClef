@@ -202,6 +202,7 @@ class SqlAlchemyAssetRepository:
             created_at=record.created_at,
             updated_at=updated_at,
         )
+        self._session.expire(record)
         return claimed_job, previous_status
 
     def _build_audio_asset_record(
