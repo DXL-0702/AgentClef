@@ -1,0 +1,246 @@
+{
+  "draft_score": {
+    "id": "5ef5c0ce-2d7b-44e7-b02f-8cd6fffe8fef",
+    "project_id": "e6b8f470-f11d-4655-bff9-6172dd927ad5",
+    "version": 1,
+    "beat_grid": {
+      "tempo_bpm": 120.0,
+      "meter_numerator": 4,
+      "meter_denominator": 4,
+      "beats": [
+        {
+          "index": 0,
+          "time_seconds": 0.0,
+          "beat": 0.0,
+          "measure": 1,
+          "confidence": 0.99
+        },
+        {
+          "index": 1,
+          "time_seconds": 0.5,
+          "beat": 1.0,
+          "measure": 1,
+          "confidence": 0.98
+        },
+        {
+          "index": 2,
+          "time_seconds": 1.0,
+          "beat": 2.0,
+          "measure": 1,
+          "confidence": 0.97
+        },
+        {
+          "index": 3,
+          "time_seconds": 1.5,
+          "beat": 3.0,
+          "measure": 1,
+          "confidence": 0.97
+        },
+        {
+          "index": 4,
+          "time_seconds": 2.0,
+          "beat": 4.0,
+          "measure": 2,
+          "confidence": 0.96
+        }
+      ],
+      "confidence": {
+        "overall": 0.96,
+        "onset": 0.95,
+        "duration": 0.94
+      }
+    },
+    "tracks": [
+      {
+        "id": "track-main",
+        "kind": "main_melody",
+        "name": "Main Melody"
+      },
+      {
+        "id": "track-chords",
+        "kind": "chords",
+        "name": "Chord Candidates"
+      }
+    ],
+    "notes": [
+      {
+        "id": "note-1",
+        "track_id": "track-main",
+        "pitch": {
+          "midi": 60,
+          "name": "C4"
+        },
+        "audio_start_seconds": 0.0,
+        "audio_end_seconds": 0.45,
+        "start_beat": 0.0,
+        "duration_beats": 1.0,
+        "source": "model",
+        "confidence": {
+          "overall": 0.92,
+          "pitch": 0.95,
+          "onset": 0.91,
+          "duration": 0.89
+        },
+        "notation_hints": {
+          "tie_start": false
+        }
+      },
+      {
+        "id": "note-2",
+        "track_id": "track-main",
+        "pitch": {
+          "midi": 64,
+          "name": "E4"
+        },
+        "audio_start_seconds": 0.5,
+        "audio_end_seconds": 0.95,
+        "start_beat": 1.0,
+        "duration_beats": 1.0,
+        "source": "model",
+        "confidence": {
+          "overall": 0.88,
+          "pitch": 0.9,
+          "onset": 0.87,
+          "duration": 0.85
+        },
+        "notation_hints": {}
+      },
+      {
+        "id": "note-3",
+        "track_id": "track-main",
+        "pitch": {
+          "midi": 67,
+          "name": "G4"
+        },
+        "audio_start_seconds": 1.0,
+        "audio_end_seconds": 1.9,
+        "start_beat": 2.0,
+        "duration_beats": 2.0,
+        "source": "model",
+        "confidence": {
+          "overall": 0.8,
+          "pitch": 0.82,
+          "onset": 0.79,
+          "duration": 0.78
+        },
+        "notation_hints": {
+          "accent": true
+        }
+      }
+    ],
+    "chords": [
+      {
+        "id": "chord-1",
+        "track_id": "track-chords",
+        "label": "C",
+        "candidate_labels": ["C", "Am"],
+        "audio_start_seconds": 0.0,
+        "audio_end_seconds": 2.0,
+        "start_beat": 0.0,
+        "duration_beats": 4.0,
+        "source": "model",
+        "confidence": {
+          "overall": 0.73
+        }
+      }
+    ],
+    "uncertainty_markers": [
+      {
+        "id": "uncertain-1",
+        "type": "duration_uncertain",
+        "message": "The last note tail is ambiguous.",
+        "audio_range": {
+          "start_seconds": 1.0,
+          "end_seconds": 2.0
+        },
+        "beat_range": {
+          "start_beat": 2.0,
+          "end_beat": 4.0
+        },
+        "note_ids": ["note-3"],
+        "chord_event_ids": [],
+        "confidence": {
+          "overall": 0.62,
+          "duration": 0.58
+        }
+      }
+    ],
+    "created_at": "2026-06-22T13:50:00Z",
+    "updated_at": "2026-06-22T13:50:00Z"
+  },
+  "selection_range": {
+    "target_type": "note",
+    "note_ids": ["note-3"],
+    "audio_range": {
+      "start_seconds": 1.0,
+      "end_seconds": 2.0
+    },
+    "beat_range": {
+      "start_beat": 2.0,
+      "end_beat": 4.0
+    }
+  },
+  "candidate_edit": {
+    "id": "865b501e-dfd5-40a8-bef4-65e3531c55b1",
+    "draft_score_id": "5ef5c0ce-2d7b-44e7-b02f-8cd6fffe8fef",
+    "draft_score_version": 1,
+    "status": "proposed",
+    "summary": "Shorten the last note to one beat.",
+    "affected_range": {
+      "target_type": "note",
+      "note_ids": ["note-3"],
+      "audio_range": {
+        "start_seconds": 1.0,
+        "end_seconds": 2.0
+      },
+      "beat_range": {
+        "start_beat": 2.0,
+        "end_beat": 4.0
+      }
+    },
+    "operations": [
+      {
+        "type": "change_duration",
+        "note_id": "note-3",
+        "duration_beats": 1.0,
+        "audio_range": {
+          "start_seconds": 1.0,
+          "end_seconds": 1.5
+        }
+      }
+    ],
+    "created_at": "2026-06-22T13:51:00Z"
+  },
+  "revision": {
+    "id": "e0c71166-e21c-4821-a7e8-31d7152d126e",
+    "draft_score_id": "5ef5c0ce-2d7b-44e7-b02f-8cd6fffe8fef",
+    "draft_score_version": 2,
+    "source": "confirmed_agent_edit",
+    "summary": "Shortened the final note after user confirmation.",
+    "affected_range": {
+      "target_type": "note",
+      "note_ids": ["note-3"],
+      "audio_range": {
+        "start_seconds": 1.0,
+        "end_seconds": 1.5
+      },
+      "beat_range": {
+        "start_beat": 2.0,
+        "end_beat": 3.0
+      }
+    },
+    "operations": [
+      {
+        "type": "change_duration",
+        "note_id": "note-3",
+        "duration_beats": 1.0,
+        "audio_range": {
+          "start_seconds": 1.0,
+          "end_seconds": 1.5
+        }
+      }
+    ],
+    "candidate_edit_id": "865b501e-dfd5-40a8-bef4-65e3531c55b1",
+    "created_at": "2026-06-22T13:52:00Z"
+  }
+}
