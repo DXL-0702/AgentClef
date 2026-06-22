@@ -80,6 +80,7 @@ flowchart TB
 ```text
 User uploads audio
 -> FastAPI stores AudioAsset and creates TranscriptionJob
+-> FastAPI dispatches the TranscriptionJob to Celery
 -> Celery worker normalizes audio
 -> Pipeline generates BeatGrid, NoteEvent, optional ChordEvent
 -> Backend stores DraftScore
@@ -102,6 +103,8 @@ User uploads audio
 | Persistence | PostgreSQL / file storage | Project, task, DraftScore, audio metadata, CandidateEdit, Revision |
 | Queue | Redis / Celery | Long transcription job dispatch |
 | Agent Layer | provider adapter | Structured reasoning and CandidateEdit generation |
+
+The worker baseline introduces explicit task dispatch and persisted TranscriptionJob status updates. Full audio normalization and transcription are connected in the pipeline baseline issue.
 
 ## v0.1 Data Flow
 

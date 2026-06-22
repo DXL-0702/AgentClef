@@ -72,12 +72,17 @@ flowchart LR
 - Store transcription tasks.
 - Store DraftScore payloads.
 - Store Agent messages, CandidateEdit records, and revisions.
+- Use SQLAlchemy ORM models as the application persistence mapping.
+- Use Alembic migrations as the schema change history.
+- Store structured DraftScore, Agent context, CandidateEdit, and Revision payloads as JSONB in PostgreSQL.
 
 ### Redis and Celery
 
 - Queue transcription jobs.
 - Run long audio and model pipeline tasks outside request lifecycle.
 - Track task progress and failure states.
+- v0.1 worker baseline provides an explicit task dispatch endpoint before the full transcription pipeline is connected.
+- Worker tasks update persisted TranscriptionJob state through the repository layer.
 
 ### Audio Pipeline Worker
 
