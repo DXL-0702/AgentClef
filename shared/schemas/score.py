@@ -302,6 +302,43 @@ class CandidateEditOperation(StrictSchema):
                 raise ValueError("change_chord operation must include chord_event_id")
             if self.chord_label is None:
                 raise ValueError("change_chord operation must include chord_label")
+
+        if self.type in (
+            CandidateEditType.change_pitch,
+            CandidateEditType.change_duration,
+            CandidateEditType.move_note,
+            CandidateEditType.delete_note,
+        ):
+            if self.chord_event_id is not None or self.chord_label is not None or self.note_event is not None:
+                raise ValueError(
+                    f"{self.type.value} operation must not include chord_event_id, "
+                    "chord_label, or note_event",
+                )
+        elif self.type == CandidateEditType.add_note:
+            if (
+                self.note_id is not None
+                or self.chord_event_id is not None
+                or self.chord_label is not None
+                or self.pitch is not None
+                or self.duration_beats is not None
+                or self.start_beat is not None
+            ):
+                raise ValueError(
+                    "add_note operation must not include note_id, chord_event_id, "
+                    "chord_label, pitch, duration_beats, or start_beat",
+                )
+        elif self.type == CandidateEditType.change_chord:
+            if (
+                self.note_id is not None
+                or self.pitch is not None
+                or self.duration_beats is not None
+                or self.start_beat is not None
+                or self.note_event is not None
+            ):
+                raise ValueError(
+                    "change_chord operation must not include note_id, pitch, "
+                    "duration_beats, start_beat, or note_event",
+                )
         return self
 
     def _require_note_id(self) -> None:

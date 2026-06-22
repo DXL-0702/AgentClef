@@ -8,16 +8,19 @@ import pytest
 from shared.schemas.score import CandidateEdit, DraftScore, Revision, SelectionRange
 
 
-FIXTURE_PATH = Path("tests/fixtures/score_review_v01.json")
+FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "score_review_v01.json"
 
 
 def load_fixture_bundle() -> dict[str, Any]:
-    return json.loads(FIXTURE_PATH.read_text())
+    return json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
 
 
-def test_v01_fixture_bundle_validates_core_score_contracts() -> None:
-    bundle = load_fixture_bundle()
+@pytest.fixture(scope="module")
+def bundle() -> dict[str, Any]:
+    return load_fixture_bundle()
 
+
+def test_v01_fixture_bundle_validates_core_score_contracts(bundle: dict[str, Any]) -> None:
     draft_score = DraftScore.model_validate(bundle["draft_score"])
     selection_range = SelectionRange.model_validate(bundle["selection_range"])
     candidate_edit = CandidateEdit.model_validate(bundle["candidate_edit"])
@@ -30,17 +33,14 @@ def test_v01_fixture_bundle_validates_core_score_contracts() -> None:
     assert revision.source.value == "confirmed_agent_edit"
 
 
-def test_draft_score_round_trip_keeps_valid_payload() -> None:
-    bundle = load_fixture_bundle()
-
+def test_draft_score_round_trip_keeps_valid_payload(bundle: dict[str, Any]) -> None:
     validated = DraftScore.model_validate(bundle["draft_score"])
     round_trip = DraftScore.model_validate_json(validated.model_dump_json())
 
     assert round_trip == validated
 
 
-def test_note_event_rejects_non_positive_audio_span() -> None:
-    bundle = load_fixture_bundle()
+def test_note_event_rejects_non_positive_audio_span(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["draft_score"])
     invalid_payload["notes"][0]["audio_start_seconds"] = 0.25
     invalid_payload["notes"][0]["audio_end_seconds"] = invalid_payload["notes"][0]["audio_start_seconds"]
@@ -49,8 +49,7 @@ def test_note_event_rejects_non_positive_audio_span() -> None:
         DraftScore.model_validate(invalid_payload)
 
 
-def test_selection_range_rejects_note_target_without_single_note_id() -> None:
-    bundle = load_fixture_bundle()
+def test_selection_range_rejects_note_target_without_single_note_id(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["selection_range"])
     invalid_payload["note_ids"] = ["note-2", "note-3"]
 
@@ -58,8 +57,7 @@ def test_selection_range_rejects_note_target_without_single_note_id() -> None:
         SelectionRange.model_validate(invalid_payload)
 
 
-def test_candidate_edit_rejects_empty_operations() -> None:
-    bundle = load_fixture_bundle()
+def test_candidate_edit_rejects_empty_operations(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["candidate_edit"])
     invalid_payload["operations"] = []
 
@@ -67,8 +65,7 @@ def test_candidate_edit_rejects_empty_operations() -> None:
         CandidateEdit.model_validate(invalid_payload)
 
 
-def test_candidate_edit_rejects_missing_note_id_for_duration_change() -> None:
-    bundle = load_fixture_bundle()
+def test_candidate_edit_rejects_missing_note_id_for_duration_change(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["candidate_edit"])
     invalid_payload["operations"][0].pop("note_id")
 
@@ -76,8 +73,52 @@ def test_candidate_edit_rejects_missing_note_id_for_duration_change() -> None:
         CandidateEdit.model_validate(invalid_payload)
 
 
-def test_draft_score_rejects_chord_event_on_non_chord_track() -> None:
-    bundle = load_fixture_bundle()
+def test_candidate_edit_rejects_note_operation_with_chord_fields(bundle: dict[str, Any]) -> None:
+    invalid_payload = deepcopy(bundle["candidate_edit"])
+    invalid_payload["operations"][0]["chord_event_id"] = "chord-1"
+
+    with pytest.raises(
+        ValueError,
+        match="change_duration operation must not include chord_event_id",
+    ):
+        CandidateEdit.model_validate(invalid_payload)
+
+
+def test_candidate_edit_rejects_add_note_with_individual_note_fields(bundle: dict[str, Any]) -> None:
+    invalid_payload = deepcopy(bundle["candidate_edit"])
+    invalid_payload["operations"][0] = {
+        "type": "add_note",
+        "note_event": deepcopy(bundle["draft_score"]["notes"][0]),
+        "pitch": {
+            "midi": 62,
+            "name": "D4",
+        },
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="add_note operation must not include note_id",
+    ):
+        CandidateEdit.model_validate(invalid_payload)
+
+
+def test_candidate_edit_rejects_change_chord_with_note_fields(bundle: dict[str, Any]) -> None:
+    invalid_payload = deepcopy(bundle["candidate_edit"])
+    invalid_payload["operations"][0] = {
+        "type": "change_chord",
+        "chord_event_id": "chord-1",
+        "chord_label": "Am",
+        "note_id": "note-1",
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="change_chord operation must not include note_id",
+    ):
+        CandidateEdit.model_validate(invalid_payload)
+
+
+def test_draft_score_rejects_chord_event_on_non_chord_track(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["draft_score"])
     invalid_payload["chords"][0]["track_id"] = "track-main"
 
@@ -85,8 +126,7 @@ def test_draft_score_rejects_chord_event_on_non_chord_track() -> None:
         DraftScore.model_validate(invalid_payload)
 
 
-def test_draft_score_rejects_updated_at_before_created_at() -> None:
-    bundle = load_fixture_bundle()
+def test_draft_score_rejects_updated_at_before_created_at(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["draft_score"])
     invalid_payload["updated_at"] = "2026-06-22T13:49:59Z"
 
@@ -94,8 +134,7 @@ def test_draft_score_rejects_updated_at_before_created_at() -> None:
         DraftScore.model_validate(invalid_payload)
 
 
-def test_draft_score_rejects_naive_timestamp() -> None:
-    bundle = load_fixture_bundle()
+def test_draft_score_rejects_naive_timestamp(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["draft_score"])
     invalid_payload["created_at"] = "2026-06-22T13:50:00"
 
@@ -103,8 +142,7 @@ def test_draft_score_rejects_naive_timestamp() -> None:
         DraftScore.model_validate(invalid_payload)
 
 
-def test_candidate_edit_rejects_naive_timestamp() -> None:
-    bundle = load_fixture_bundle()
+def test_candidate_edit_rejects_naive_timestamp(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["candidate_edit"])
     invalid_payload["created_at"] = "2026-06-22T13:50:00"
 
@@ -112,8 +150,7 @@ def test_candidate_edit_rejects_naive_timestamp() -> None:
         CandidateEdit.model_validate(invalid_payload)
 
 
-def test_revision_rejects_naive_timestamp() -> None:
-    bundle = load_fixture_bundle()
+def test_revision_rejects_naive_timestamp(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["revision"])
     invalid_payload["created_at"] = "2026-06-22T13:50:00"
 
@@ -121,8 +158,7 @@ def test_revision_rejects_naive_timestamp() -> None:
         Revision.model_validate(invalid_payload)
 
 
-def test_draft_score_rejects_duplicate_track_id() -> None:
-    bundle = load_fixture_bundle()
+def test_draft_score_rejects_duplicate_track_id(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["draft_score"])
     invalid_payload["tracks"][1]["id"] = "track-main"
 
@@ -130,8 +166,7 @@ def test_draft_score_rejects_duplicate_track_id() -> None:
         DraftScore.model_validate(invalid_payload)
 
 
-def test_draft_score_rejects_duplicate_note_id() -> None:
-    bundle = load_fixture_bundle()
+def test_draft_score_rejects_duplicate_note_id(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["draft_score"])
     invalid_payload["notes"][1]["id"] = "note-1"
 
@@ -139,8 +174,7 @@ def test_draft_score_rejects_duplicate_note_id() -> None:
         DraftScore.model_validate(invalid_payload)
 
 
-def test_draft_score_rejects_duplicate_chord_id() -> None:
-    bundle = load_fixture_bundle()
+def test_draft_score_rejects_duplicate_chord_id(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["draft_score"])
     duplicate_chord = deepcopy(invalid_payload["chords"][0])
     invalid_payload["chords"].append(duplicate_chord)
@@ -149,8 +183,7 @@ def test_draft_score_rejects_duplicate_chord_id() -> None:
         DraftScore.model_validate(invalid_payload)
 
 
-def test_draft_score_rejects_duplicate_uncertainty_marker_id() -> None:
-    bundle = load_fixture_bundle()
+def test_draft_score_rejects_duplicate_uncertainty_marker_id(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["draft_score"])
     duplicate_marker = deepcopy(invalid_payload["uncertainty_markers"][0])
     invalid_payload["uncertainty_markers"].append(duplicate_marker)
@@ -159,8 +192,7 @@ def test_draft_score_rejects_duplicate_uncertainty_marker_id() -> None:
         DraftScore.model_validate(invalid_payload)
 
 
-def test_draft_score_rejects_unknown_uncertainty_note_reference() -> None:
-    bundle = load_fixture_bundle()
+def test_draft_score_rejects_unknown_uncertainty_note_reference(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["draft_score"])
     invalid_payload["uncertainty_markers"][0]["note_ids"] = ["missing-note"]
 
@@ -168,8 +200,7 @@ def test_draft_score_rejects_unknown_uncertainty_note_reference() -> None:
         DraftScore.model_validate(invalid_payload)
 
 
-def test_draft_score_rejects_unknown_uncertainty_chord_reference() -> None:
-    bundle = load_fixture_bundle()
+def test_draft_score_rejects_unknown_uncertainty_chord_reference(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["draft_score"])
     invalid_payload["uncertainty_markers"][0]["chord_event_ids"] = ["missing-chord"]
 
@@ -180,8 +211,7 @@ def test_draft_score_rejects_unknown_uncertainty_chord_reference() -> None:
         DraftScore.model_validate(invalid_payload)
 
 
-def test_beat_grid_rejects_non_increasing_index() -> None:
-    bundle = load_fixture_bundle()
+def test_beat_grid_rejects_non_increasing_index(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["draft_score"])
     invalid_payload["beat_grid"]["beats"][1]["index"] = 0
 
@@ -189,8 +219,7 @@ def test_beat_grid_rejects_non_increasing_index() -> None:
         DraftScore.model_validate(invalid_payload)
 
 
-def test_beat_grid_rejects_non_power_of_two_denominator() -> None:
-    bundle = load_fixture_bundle()
+def test_beat_grid_rejects_non_power_of_two_denominator(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["draft_score"])
     invalid_payload["beat_grid"]["meter_denominator"] = 3
 
@@ -198,8 +227,7 @@ def test_beat_grid_rejects_non_power_of_two_denominator() -> None:
         DraftScore.model_validate(invalid_payload)
 
 
-def test_beat_grid_rejects_decreasing_measure() -> None:
-    bundle = load_fixture_bundle()
+def test_beat_grid_rejects_decreasing_measure(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["draft_score"])
     invalid_payload["beat_grid"]["beats"][4]["measure"] = 0
 
@@ -207,8 +235,7 @@ def test_beat_grid_rejects_decreasing_measure() -> None:
         DraftScore.model_validate(invalid_payload)
 
 
-def test_beat_grid_rejects_measure_regression() -> None:
-    bundle = load_fixture_bundle()
+def test_beat_grid_rejects_measure_regression(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["draft_score"])
     invalid_payload["beat_grid"]["beats"][4]["measure"] = 1
     invalid_payload["beat_grid"]["beats"][3]["measure"] = 2
@@ -217,8 +244,7 @@ def test_beat_grid_rejects_measure_regression() -> None:
         DraftScore.model_validate(invalid_payload)
 
 
-def test_selection_range_rejects_unrelated_chord_field_for_note_target() -> None:
-    bundle = load_fixture_bundle()
+def test_selection_range_rejects_unrelated_chord_field_for_note_target(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["selection_range"])
     invalid_payload["chord_event_id"] = "chord-1"
 
@@ -229,8 +255,7 @@ def test_selection_range_rejects_unrelated_chord_field_for_note_target() -> None
         SelectionRange.model_validate(invalid_payload)
 
 
-def test_uncertainty_marker_rejects_missing_target() -> None:
-    bundle = load_fixture_bundle()
+def test_uncertainty_marker_rejects_missing_target(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["draft_score"])
     invalid_payload["uncertainty_markers"][0].pop("audio_range")
     invalid_payload["uncertainty_markers"][0].pop("beat_range")
