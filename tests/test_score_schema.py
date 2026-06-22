@@ -84,6 +84,73 @@ def test_candidate_edit_rejects_note_operation_with_chord_fields(bundle: dict[st
         CandidateEdit.model_validate(invalid_payload)
 
 
+def test_candidate_edit_rejects_pitch_change_with_duration_fields(bundle: dict[str, Any]) -> None:
+    invalid_payload = deepcopy(bundle["candidate_edit"])
+    invalid_payload["operations"][0] = {
+        "type": "change_pitch",
+        "note_id": "note-1",
+        "pitch": {
+            "midi": 62,
+            "name": "D4",
+        },
+        "duration_beats": 1.5,
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="change_pitch operation must not include duration_beats",
+    ):
+        CandidateEdit.model_validate(invalid_payload)
+
+
+def test_candidate_edit_rejects_duration_change_with_pitch_field(bundle: dict[str, Any]) -> None:
+    invalid_payload = deepcopy(bundle["candidate_edit"])
+    invalid_payload["operations"][0]["pitch"] = {
+        "midi": 62,
+        "name": "D4",
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="change_duration operation must not include pitch",
+    ):
+        CandidateEdit.model_validate(invalid_payload)
+
+
+def test_candidate_edit_rejects_move_note_with_duration_field(bundle: dict[str, Any]) -> None:
+    invalid_payload = deepcopy(bundle["candidate_edit"])
+    invalid_payload["operations"][0] = {
+        "type": "move_note",
+        "note_id": "note-1",
+        "start_beat": 1.5,
+        "duration_beats": 1.0,
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="move_note operation must not include duration_beats",
+    ):
+        CandidateEdit.model_validate(invalid_payload)
+
+
+def test_candidate_edit_rejects_delete_note_with_audio_range(bundle: dict[str, Any]) -> None:
+    invalid_payload = deepcopy(bundle["candidate_edit"])
+    invalid_payload["operations"][0] = {
+        "type": "delete_note",
+        "note_id": "note-1",
+        "audio_range": {
+            "start_seconds": 0.0,
+            "end_seconds": 0.5,
+        },
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="delete_note operation must not include audio_range",
+    ):
+        CandidateEdit.model_validate(invalid_payload)
+
+
 def test_candidate_edit_rejects_add_note_with_individual_note_fields(bundle: dict[str, Any]) -> None:
     invalid_payload = deepcopy(bundle["candidate_edit"])
     invalid_payload["operations"][0] = {
@@ -97,7 +164,7 @@ def test_candidate_edit_rejects_add_note_with_individual_note_fields(bundle: dic
 
     with pytest.raises(
         ValueError,
-        match="add_note operation must not include note_id",
+        match="add_note operation must not include pitch",
     ):
         CandidateEdit.model_validate(invalid_payload)
 

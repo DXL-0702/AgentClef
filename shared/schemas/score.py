@@ -1,5 +1,6 @@
+from dataclasses import dataclass
 from enum import StrEnum
-from typing import Self
+from typing import Literal, Self
 from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
@@ -57,6 +58,60 @@ class RevisionSource(StrEnum):
     user = "user"
     confirmed_agent_edit = "confirmed_agent_edit"
     system = "system"
+
+
+OperationField = Literal[
+    "note_id",
+    "chord_event_id",
+    "pitch",
+    "duration_beats",
+    "start_beat",
+    "audio_range",
+    "note_event",
+    "chord_label",
+]
+
+
+@dataclass(frozen=True)
+class OperationContract:
+    required: tuple[OperationField, ...]
+    forbidden: tuple[OperationField, ...]
+
+
+OPERATION_CONTRACTS: dict[CandidateEditType, OperationContract] = {
+    CandidateEditType.change_pitch: OperationContract(
+        required=("note_id", "pitch"),
+        forbidden=("duration_beats", "start_beat", "chord_event_id", "chord_label", "note_event"),
+    ),
+    CandidateEditType.change_duration: OperationContract(
+        required=("note_id", "duration_beats"),
+        forbidden=("pitch", "start_beat", "chord_event_id", "chord_label", "note_event"),
+    ),
+    CandidateEditType.move_note: OperationContract(
+        required=("note_id", "start_beat"),
+        forbidden=("pitch", "duration_beats", "chord_event_id", "chord_label", "note_event"),
+    ),
+    CandidateEditType.add_note: OperationContract(
+        required=("note_event",),
+        forbidden=("note_id", "chord_event_id", "chord_label", "pitch", "duration_beats", "start_beat"),
+    ),
+    CandidateEditType.delete_note: OperationContract(
+        required=("note_id",),
+        forbidden=(
+            "pitch",
+            "duration_beats",
+            "start_beat",
+            "audio_range",
+            "chord_event_id",
+            "chord_label",
+            "note_event",
+        ),
+    ),
+    CandidateEditType.change_chord: OperationContract(
+        required=("chord_event_id", "chord_label"),
+        forbidden=("note_id", "pitch", "duration_beats", "start_beat", "note_event"),
+    ),
+}
 
 
 class Confidence(StrictSchema):
@@ -280,70 +335,30 @@ class CandidateEditOperation(StrictSchema):
 
     @model_validator(mode="after")
     def validate_operation_payload(self) -> Self:
-        if self.type == CandidateEditType.change_pitch:
-            self._require_note_id()
-            if self.pitch is None:
-                raise ValueError("change_pitch operation must include pitch")
-        elif self.type == CandidateEditType.change_duration:
-            self._require_note_id()
-            if self.duration_beats is None:
-                raise ValueError("change_duration operation must include duration_beats")
-        elif self.type == CandidateEditType.move_note:
-            self._require_note_id()
-            if self.start_beat is None:
-                raise ValueError("move_note operation must include start_beat")
-        elif self.type == CandidateEditType.add_note:
-            if self.note_event is None:
-                raise ValueError("add_note operation must include note_event")
-        elif self.type == CandidateEditType.delete_note:
-            self._require_note_id()
-        elif self.type == CandidateEditType.change_chord:
-            if self.chord_event_id is None:
-                raise ValueError("change_chord operation must include chord_event_id")
-            if self.chord_label is None:
-                raise ValueError("change_chord operation must include chord_label")
-
-        if self.type in (
-            CandidateEditType.change_pitch,
-            CandidateEditType.change_duration,
-            CandidateEditType.move_note,
-            CandidateEditType.delete_note,
-        ):
-            if self.chord_event_id is not None or self.chord_label is not None or self.note_event is not None:
-                raise ValueError(
-                    f"{self.type.value} operation must not include chord_event_id, "
-                    "chord_label, or note_event",
-                )
-        elif self.type == CandidateEditType.add_note:
-            if (
-                self.note_id is not None
-                or self.chord_event_id is not None
-                or self.chord_label is not None
-                or self.pitch is not None
-                or self.duration_beats is not None
-                or self.start_beat is not None
-            ):
-                raise ValueError(
-                    "add_note operation must not include note_id, chord_event_id, "
-                    "chord_label, pitch, duration_beats, or start_beat",
-                )
-        elif self.type == CandidateEditType.change_chord:
-            if (
-                self.note_id is not None
-                or self.pitch is not None
-                or self.duration_beats is not None
-                or self.start_beat is not None
-                or self.note_event is not None
-            ):
-                raise ValueError(
-                    "change_chord operation must not include note_id, pitch, "
-                    "duration_beats, start_beat, or note_event",
-                )
+        contract = OPERATION_CONTRACTS[self.type]
+        self._validate_required_fields(contract.required)
+        self._validate_forbidden_fields(contract.forbidden)
         return self
 
-    def _require_note_id(self) -> None:
-        if self.note_id is None:
-            raise ValueError(f"{self.type.value} operation must include note_id")
+    def _validate_required_fields(self, required_fields: tuple[OperationField, ...]) -> None:
+        for field_name in required_fields:
+            if getattr(self, field_name) is None:
+                raise ValueError(f"{self.type.value} operation must include {field_name}")
+
+    def _validate_forbidden_fields(self, forbidden_fields: tuple[OperationField, ...]) -> None:
+        present_fields = [field_name for field_name in forbidden_fields if getattr(self, field_name) is not None]
+        if present_fields:
+            raise ValueError(
+                f"{self.type.value} operation must not include {self._format_field_list(present_fields)}",
+            )
+
+    @staticmethod
+    def _format_field_list(field_names: list[OperationField]) -> str:
+        if len(field_names) == 1:
+            return field_names[0]
+        if len(field_names) == 2:
+            return f"{field_names[0]} or {field_names[1]}"
+        return f"{', '.join(field_names[:-1])}, or {field_names[-1]}"
 
 
 class CandidateEdit(StrictSchema):
