@@ -1,9 +1,14 @@
 from fastapi.testclient import TestClient
+from pytest import MonkeyPatch
 
-from server.main import app
+from server.app import create_app
+from server.config import Settings
 
 
-def test_health_check_returns_public_runtime_state() -> None:
+def test_health_check_returns_public_runtime_state(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(Settings, "model_config", {**Settings.model_config, "env_file": None})
+    settings = Settings()
+    app = create_app(settings)
     client = TestClient(app)
 
     response = client.get("/health")
@@ -12,8 +17,12 @@ def test_health_check_returns_public_runtime_state() -> None:
     payload = response.json()
     assert payload["status"] == "ok"
     assert payload["service"] == "AgentClef"
+    assert payload["version"] == "0.1.0"
+    assert payload["environment"] == "development"
     assert payload["postgres_configured"] is True
     assert payload["redis_configured"] is True
     assert payload["file_storage_configured"] is True
+    assert payload["upload_limits"] == {"max_mb": 50, "max_seconds": 300}
+    assert payload["llm_provider"] == "disabled"
     assert "file_storage_path" not in payload
     assert "llm_api_key" not in payload

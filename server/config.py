@@ -1,6 +1,8 @@
 from functools import lru_cache
 
-from pydantic import Field, field_validator
+from typing import Any
+
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,14 +29,51 @@ class Settings(BaseSettings):
     llm_provider: str = "disabled"
     llm_api_key: str | None = None
 
+    @field_validator("app_name", "app_version", "postgres_dsn", "redis_url", "file_storage_path", "llm_provider")
+    @classmethod
+    def validate_required_string(cls, value: str, info: ValidationInfo) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError(f"{info.field_name} must not be empty")
+        return normalized
+
     @field_validator("environment")
     @classmethod
     def validate_environment(cls, value: str) -> str:
         allowed = {"development", "test", "staging", "production"}
-        normalized = value.lower()
+        normalized = value.strip().lower()
         if normalized not in allowed:
             raise ValueError(f"environment must be one of: {', '.join(sorted(allowed))}")
         return normalized
+
+    @field_validator("cors_origins")
+    @classmethod
+    def validate_cors_origins(cls, value: list[str]) -> list[str]:
+        origins = [origin.strip() for origin in value]
+        if any(not origin for origin in origins):
+            raise ValueError("cors_origins must not contain empty values")
+        if "*" in origins:
+            raise ValueError("cors_origins must not contain '*' when credentials are enabled")
+        return origins
+
+    @field_validator("llm_provider")
+    @classmethod
+    def normalize_llm_provider(cls, value: str) -> str:
+        return value.lower()
+
+    @field_validator("llm_api_key", mode="before")
+    @classmethod
+    def normalize_llm_api_key(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+    @model_validator(mode="after")
+    def validate_llm_credentials(self) -> "Settings":
+        if self.llm_provider != "disabled" and self.llm_api_key is None:
+            raise ValueError("llm_api_key must be provided when llm_provider is enabled")
+        return self
 
 
 @lru_cache

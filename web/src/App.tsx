@@ -7,6 +7,8 @@ export function App() {
     queryKey: ["health"],
     queryFn: fetchHealth,
     retry: false,
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: true,
   });
 
   return (
