@@ -7,6 +7,7 @@ from server.api.tasks import router as tasks_router
 from server.api.uploads import router as uploads_router
 from server.config import Settings, get_settings
 from server.db import create_database_engine, create_database_schema, create_session_factory
+from worker.app import create_celery_app
 
 
 def create_app(settings: Settings | None = None, *, initialize_database: bool = False) -> FastAPI:
@@ -19,6 +20,7 @@ def create_app(settings: Settings | None = None, *, initialize_database: bool = 
         create_database_schema(engine)
     app.state.db_engine = engine
     app.state.session_factory = create_session_factory(engine)
+    app.state.celery_app = create_celery_app(runtime_settings)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=runtime_settings.cors_origins,

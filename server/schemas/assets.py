@@ -12,7 +12,14 @@ class AudioAssetStatus(StrEnum):
 class TranscriptionJobStatus(StrEnum):
     created = "created"
     uploaded = "uploaded"
+    preprocessing = "preprocessing"
+    transcribing = "transcribing"
+    postprocessing = "postprocessing"
+    draft_ready = "draft_ready"
     upload_failed = "upload_failed"
+    preprocessing_failed = "preprocessing_failed"
+    transcription_failed = "transcription_failed"
+    postprocessing_failed = "postprocessing_failed"
 
 
 class ProjectCreateRequest(BaseModel):

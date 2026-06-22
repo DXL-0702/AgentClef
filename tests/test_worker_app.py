@@ -22,3 +22,4 @@ def test_create_celery_app_includes_task_modules(monkeypatch: MonkeyPatch) -> No
     app = create_celery_app(settings)
 
     assert "worker.tasks" in app.conf.include
+    assert "worker.tasks.transcription" in app.conf.include
