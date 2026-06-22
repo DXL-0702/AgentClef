@@ -12,9 +12,9 @@ from starlette.datastructures import Headers
 
 from server.app import create_app
 from server.domain.assets import AudioAsset, Project, TranscriptionJob
-from server.domain.repository import get_asset_repository
+from server.domain.repository import SqlAlchemyAssetRepository, get_asset_repository
 from server.domain.storage import UploadValidationError, store_audio_upload
-from server.schemas.assets import AudioAssetStatus, ProjectCreateRequest, utc_now
+from server.schemas.assets import AudioAssetStatus, ProjectCreateRequest, TranscriptionJobStatus, utc_now
 from tests.settings_helpers import make_settings
 
 
@@ -84,6 +84,14 @@ def create_test_app(monkeypatch: MonkeyPatch, storage_path: Path) -> FastAPI:
         file_storage_path=str(storage_path),
     )
     return create_app(settings, initialize_database=True)
+
+
+def update_job_status(app: FastAPI, job_id: str, status: TranscriptionJobStatus) -> None:
+    session_factory = app.state.session_factory
+    with session_factory() as session:
+        repository = SqlAlchemyAssetRepository(session)
+        job = repository.update_transcription_job_status(UUID(job_id), status)
+        assert job is not None
 
 
 def create_project(client: TestClient) -> dict[str, str]:
@@ -169,6 +177,53 @@ def test_dispatch_transcription_job_sends_worker_task(
 
     assert response.status_code == 202
     assert response.json() == job
+    assert fake_celery_app.sent_tasks == [
+        ("agentclef.transcription.run_baseline", [job["id"]]),
+    ]
+
+
+def test_dispatch_transcription_job_rejects_active_task(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    app = create_test_app(monkeypatch, tmp_path)
+    fake_celery_app = FakeCeleryApp()
+    app.state.celery_app = fake_celery_app
+    client = TestClient(app)
+    project = create_project(client)
+    upload_response = client.post(
+        f"/projects/{project['id']}/audio",
+        files={"file": ("demo.wav", b"RIFFdemo-audio", "audio/wav")},
+    )
+    job = upload_response.json()["transcription_job"]
+    update_job_status(app, job["id"], TranscriptionJobStatus.preprocessing)
+
+    response = client.post(f"/tasks/{job['id']}/dispatch")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "cannot dispatch task in status: preprocessing"
+    assert fake_celery_app.sent_tasks == []
+
+
+def test_dispatch_transcription_job_allows_failed_task_retry(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    app = create_test_app(monkeypatch, tmp_path)
+    fake_celery_app = FakeCeleryApp()
+    app.state.celery_app = fake_celery_app
+    client = TestClient(app)
+    project = create_project(client)
+    upload_response = client.post(
+        f"/projects/{project['id']}/audio",
+        files={"file": ("demo.wav", b"RIFFdemo-audio", "audio/wav")},
+    )
+    job = upload_response.json()["transcription_job"]
+    update_job_status(app, job["id"], TranscriptionJobStatus.transcription_failed)
+
+    response = client.post(f"/tasks/{job['id']}/dispatch")
+
+    assert response.status_code == 202
     assert fake_celery_app.sent_tasks == [
         ("agentclef.transcription.run_baseline", [job["id"]]),
     ]

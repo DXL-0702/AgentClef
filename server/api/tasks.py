@@ -4,9 +4,16 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from server.domain.repository import AssetRepository, get_asset_repository
-from server.schemas.assets import TranscriptionJobResponse
+from server.schemas.assets import TranscriptionJobResponse, TranscriptionJobStatus
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
+
+DISPATCHABLE_JOB_STATUSES = {
+    TranscriptionJobStatus.uploaded,
+    TranscriptionJobStatus.preprocessing_failed,
+    TranscriptionJobStatus.transcription_failed,
+    TranscriptionJobStatus.postprocessing_failed,
+}
 
 
 class TaskDispatcher(Protocol):
@@ -34,6 +41,11 @@ def dispatch_transcription_job(
     job = repository.get_transcription_job(job_id)
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+    if job.status not in DISPATCHABLE_JOB_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"cannot dispatch task in status: {job.status.value}",
+        )
 
     celery_app = _get_celery_app(request)
     celery_app.send_task("agentclef.transcription.run_baseline", args=[str(job.id)])

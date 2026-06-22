@@ -9,7 +9,13 @@ from server.domain.repository import SqlAlchemyAssetRepository
 from server.schemas.assets import ProjectCreateRequest, TranscriptionJobStatus
 from tests.settings_helpers import make_settings
 from worker.app import create_celery_app
-from worker.tasks.transcription import mark_transcription_job_status, mark_transcription_status_task
+from worker.tasks.transcription import (
+    clear_worker_session_factory_cache,
+    get_worker_session_factory,
+    mark_transcription_job_status,
+    mark_transcription_status_task,
+    run_transcription_baseline_task,
+)
 
 
 def sqlite_file_dsn(path: Path) -> str:
@@ -48,6 +54,7 @@ def test_mark_transcription_job_status_updates_persisted_job(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
 ) -> None:
+    clear_worker_session_factory_cache()
     settings = make_settings(
         monkeypatch,
         postgres_dsn=sqlite_file_dsn(tmp_path / "worker.db"),
@@ -68,6 +75,7 @@ def test_mark_transcription_status_task_runs_in_eager_mode(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
 ) -> None:
+    clear_worker_session_factory_cache()
     settings = make_settings(
         monkeypatch,
         postgres_dsn=sqlite_file_dsn(tmp_path / "worker-eager.db"),
@@ -86,4 +94,39 @@ def test_mark_transcription_status_task_runs_in_eager_mode(
 
     assert result.successful()
     assert result.result == {"job_id": job_id, "status": "preprocessing"}
+    assert get_job_status(settings, job_id) == TranscriptionJobStatus.preprocessing
+
+
+def test_worker_session_factory_is_cached_by_dsn(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    clear_worker_session_factory_cache()
+    settings = make_settings(
+        monkeypatch,
+        postgres_dsn=sqlite_file_dsn(tmp_path / "worker-cache.db"),
+    )
+
+    first_session_factory = get_worker_session_factory(settings)
+    second_session_factory = get_worker_session_factory(settings)
+
+    assert second_session_factory is first_session_factory
+
+
+def test_run_transcription_baseline_task_marks_job_preprocessing(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    clear_worker_session_factory_cache()
+    settings = make_settings(
+        monkeypatch,
+        postgres_dsn=sqlite_file_dsn(tmp_path / "worker-baseline.db"),
+    )
+    job_id = create_transcription_job(settings)
+
+    with monkeypatch.context() as patched:
+        patched.setattr("worker.tasks.transcription.get_settings", lambda: settings)
+        result = run_transcription_baseline_task(job_id)
+
+    assert result == {"job_id": job_id, "status": "preprocessing"}
     assert get_job_status(settings, job_id) == TranscriptionJobStatus.preprocessing
