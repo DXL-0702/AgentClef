@@ -81,6 +81,8 @@ flowchart LR
 - Queue transcription jobs.
 - Run long audio and model pipeline tasks outside request lifecycle.
 - Track task progress and failure states.
+- v0.1 worker baseline provides an explicit task dispatch endpoint before the full transcription pipeline is connected.
+- Worker tasks update persisted TranscriptionJob state through the repository layer.
 
 ### Audio Pipeline Worker
 

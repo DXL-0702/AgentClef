@@ -4,6 +4,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi import FastAPI
 from fastapi import UploadFile
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
@@ -15,6 +16,14 @@ from server.domain.repository import get_asset_repository
 from server.domain.storage import UploadValidationError, store_audio_upload
 from server.schemas.assets import AudioAssetStatus, ProjectCreateRequest, utc_now
 from tests.settings_helpers import make_settings
+
+
+class FakeCeleryApp:
+    def __init__(self) -> None:
+        self.sent_tasks: list[tuple[str, list[str]]] = []
+
+    def send_task(self, name: str, args: list[str]) -> None:
+        self.sent_tasks.append((name, args))
 
 
 class FailingTranscriptionJobRepository:
@@ -66,6 +75,15 @@ def create_test_client(monkeypatch: MonkeyPatch, storage_path: Path, upload_max_
         upload_max_mb=upload_max_mb,
     )
     return TestClient(create_app(settings, initialize_database=True))
+
+
+def create_test_app(monkeypatch: MonkeyPatch, storage_path: Path) -> FastAPI:
+    settings = make_settings(
+        monkeypatch,
+        postgres_dsn="sqlite+pysqlite:///:memory:",
+        file_storage_path=str(storage_path),
+    )
+    return create_app(settings, initialize_database=True)
 
 
 def create_project(client: TestClient) -> dict[str, str]:
@@ -130,6 +148,30 @@ def test_upload_audio_creates_asset_and_task(
     task_response = client.get(f"/tasks/{payload['transcription_job']['id']}")
     assert task_response.status_code == 200
     assert task_response.json() == payload["transcription_job"]
+
+
+def test_dispatch_transcription_job_sends_worker_task(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    app = create_test_app(monkeypatch, tmp_path)
+    fake_celery_app = FakeCeleryApp()
+    app.state.celery_app = fake_celery_app
+    client = TestClient(app)
+    project = create_project(client)
+    upload_response = client.post(
+        f"/projects/{project['id']}/audio",
+        files={"file": ("demo.wav", b"RIFFdemo-audio", "audio/wav")},
+    )
+    job = upload_response.json()["transcription_job"]
+
+    response = client.post(f"/tasks/{job['id']}/dispatch")
+
+    assert response.status_code == 202
+    assert response.json() == job
+    assert fake_celery_app.sent_tasks == [
+        ("agentclef.transcription.run_baseline", [job["id"]]),
+    ]
 
 
 def test_upload_audio_normalizes_windows_style_filename(

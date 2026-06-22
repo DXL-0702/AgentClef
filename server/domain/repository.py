@@ -53,6 +53,13 @@ class AssetRepository(Protocol):
     def get_transcription_job(self, job_id: UUID) -> TranscriptionJob | None:
         ...
 
+    def update_transcription_job_status(
+        self,
+        job_id: UUID,
+        status: TranscriptionJobStatus,
+    ) -> TranscriptionJob | None:
+        ...
+
 
 class SqlAlchemyAssetRepository:
     def __init__(self, session: Session) -> None:
@@ -126,6 +133,19 @@ class SqlAlchemyAssetRepository:
     def get_transcription_job(self, job_id: UUID) -> TranscriptionJob | None:
         record = self._session.get(TranscriptionJobRecord, job_id)
         return _transcription_job_from_record(record) if record is not None else None
+
+    def update_transcription_job_status(
+        self,
+        job_id: UUID,
+        status: TranscriptionJobStatus,
+    ) -> TranscriptionJob | None:
+        record = self._session.get(TranscriptionJobRecord, job_id)
+        if record is None:
+            return None
+        record.status = status.value
+        record.updated_at = utc_now()
+        self._commit_and_refresh(record)
+        return _transcription_job_from_record(record)
 
     def _build_audio_asset_record(
         self,

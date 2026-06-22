@@ -9,9 +9,12 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
         "agentclef_worker",
         broker=runtime_settings.redis_url,
         backend=runtime_settings.redis_url,
-        include=["worker.tasks"],
+        include=["worker.tasks", "worker.tasks.transcription"],
     )
-    app.conf.update(task_track_started=True)
+    app.conf.update(
+        task_track_started=True,
+        worker_prefetch_multiplier=1,
+    )
     return app
 
 
