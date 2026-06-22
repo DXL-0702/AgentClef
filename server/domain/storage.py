@@ -1,6 +1,7 @@
 from pathlib import Path
 from uuid import uuid4
 
+import anyio
 from fastapi import UploadFile
 
 
@@ -80,41 +81,43 @@ async def store_audio_upload(
     project_id: str,
     max_bytes: int,
 ) -> StoredUpload:
-    original_filename, extension, content_type = validate_audio_upload_metadata(file)
-    project_dir = (storage_root / "projects" / project_id / "audio").resolve()
-    storage_root_resolved = storage_root.resolve()
-    project_dir.mkdir(parents=True, exist_ok=True)
-
-    if not project_dir.is_relative_to(storage_root_resolved):
-        raise UploadValidationError("invalid storage path")
-
-    stored_filename = f"{uuid4().hex}{extension}"
-    destination = (project_dir / stored_filename).resolve()
-    if not destination.is_relative_to(project_dir):
-        raise UploadValidationError("invalid destination path")
-
-    size_bytes = 0
+    destination: Path | None = None
     try:
-        with destination.open("wb") as output:
+        original_filename, extension, content_type = validate_audio_upload_metadata(file)
+        project_dir = (storage_root / "projects" / project_id / "audio").resolve()
+        storage_root_resolved = storage_root.resolve()
+        if not project_dir.is_relative_to(storage_root_resolved):
+            raise UploadValidationError("invalid storage path")
+
+        project_dir.mkdir(parents=True, exist_ok=True)
+
+        stored_filename = f"{uuid4().hex}{extension}"
+        destination = (project_dir / stored_filename).resolve()
+        if not destination.is_relative_to(project_dir):
+            raise UploadValidationError("invalid destination path")
+
+        size_bytes = 0
+        async with await anyio.open_file(destination, "wb") as output:
             while chunk := await file.read(CHUNK_SIZE_BYTES):
                 size_bytes += len(chunk)
                 if size_bytes > max_bytes:
                     raise UploadValidationError("audio file exceeds upload size limit")
-                output.write(chunk)
+                await output.write(chunk)
+
+        if size_bytes == 0:
+            destination.unlink(missing_ok=True)
+            raise UploadValidationError("audio file must not be empty")
+
+        return StoredUpload(
+            original_filename=original_filename,
+            stored_filename=stored_filename,
+            content_type=content_type,
+            extension=extension,
+            size_bytes=size_bytes,
+        )
     except Exception:
-        destination.unlink(missing_ok=True)
+        if destination is not None:
+            destination.unlink(missing_ok=True)
         raise
     finally:
         await file.close()
-
-    if size_bytes == 0:
-        destination.unlink(missing_ok=True)
-        raise UploadValidationError("audio file must not be empty")
-
-    return StoredUpload(
-        original_filename=original_filename,
-        stored_filename=stored_filename,
-        content_type=content_type,
-        extension=extension,
-        size_bytes=size_bytes,
-    )

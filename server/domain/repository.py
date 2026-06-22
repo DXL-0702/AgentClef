@@ -1,6 +1,8 @@
 from threading import Lock
 from uuid import UUID, uuid4
 
+from fastapi import Request
+
 from server.domain.assets import AudioAsset, Project, TranscriptionJob
 from server.schemas.assets import (
     AudioAssetStatus,
@@ -77,5 +79,8 @@ class AssetRepository:
             return self._jobs.get(job_id)
 
 
-def get_asset_repository() -> AssetRepository:
-    return AssetRepository()
+def get_asset_repository(request: Request) -> AssetRepository:
+    repository = getattr(request.app.state, "repository", None)
+    if not isinstance(repository, AssetRepository):
+        raise RuntimeError("asset repository is not initialized")
+    return repository

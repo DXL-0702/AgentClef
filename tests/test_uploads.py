@@ -1,9 +1,15 @@
+import asyncio
+import io
 from pathlib import Path
 
+import pytest
+from fastapi import UploadFile
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
+from starlette.datastructures import Headers
 
 from server.app import create_app
+from server.domain.storage import UploadValidationError, store_audio_upload
 from tests.settings_helpers import make_settings
 
 
@@ -162,6 +168,29 @@ def test_upload_audio_rejects_file_over_size_limit(
     assert response.status_code == 400
     assert response.json()["detail"] == "audio file exceeds upload size limit"
     assert not list(tmp_path.rglob("*.wav"))
+
+
+def test_store_audio_upload_rejects_project_path_traversal(tmp_path: Path) -> None:
+    storage_root = tmp_path / "storage"
+    outside_dir = tmp_path / "outside"
+    file = UploadFile(
+        file=io.BytesIO(b"RIFFdemo-audio"),
+        filename="demo.wav",
+        headers=Headers({"content-type": "audio/wav"}),
+    )
+
+    with pytest.raises(UploadValidationError, match="invalid storage path"):
+        asyncio.run(
+            store_audio_upload(
+                file=file,
+                storage_root=storage_root,
+                project_id="../../outside",
+                max_bytes=1024,
+            )
+        )
+
+    assert not outside_dir.exists()
+    assert not storage_root.exists()
 
 
 def test_get_unknown_task_returns_404(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
