@@ -10,6 +10,10 @@ export function App() {
     refetchInterval: 10_000,
   });
 
+  const backendStatus = isLoading ? "Checking..." : isError ? "Offline" : "Online";
+  const serviceLabel = isLoading ? "Checking..." : isError ? "-" : (data?.service ?? "-");
+  const versionLabel = isLoading ? "Checking..." : isError ? "-" : (data?.version ?? "-");
+
   return (
     <main className="app-shell">
       <section className="hero-panel">
@@ -24,15 +28,15 @@ export function App() {
       <section className="status-grid" aria-label="service status">
         <div className="status-card">
           <span>Backend</span>
-          <strong>{isLoading ? "Checking" : isError ? "Offline" : "Online"}</strong>
+          <strong>{backendStatus}</strong>
         </div>
         <div className="status-card">
           <span>Service</span>
-          <strong>{data?.service ?? "AgentClef"}</strong>
+          <strong>{serviceLabel}</strong>
         </div>
         <div className="status-card">
           <span>Version</span>
-          <strong>{data?.version ?? "0.1.0"}</strong>
+          <strong>{versionLabel}</strong>
         </div>
       </section>
     </main>

@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import Any
+from typing import Any, cast
 
 from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic.fields import FieldInfo
@@ -19,7 +19,7 @@ def parse_cors_origins_env(value: str) -> list[str] | None:
     return [origin.strip() for origin in normalized.split(",") if origin.strip()]
 
 
-class AgentClefEnvSettingsSource(EnvSettingsSource):
+class CorsOriginsSettingsSourceMixin:
     def prepare_field_value(
         self,
         field_name: str,
@@ -31,22 +31,15 @@ class AgentClefEnvSettingsSource(EnvSettingsSource):
             parsed = parse_cors_origins_env(value)
             if parsed is not None:
                 return parsed
-        return super().prepare_field_value(field_name, field, value, value_is_complex)
+        return cast(Any, super()).prepare_field_value(field_name, field, value, value_is_complex)
 
 
-class AgentClefDotEnvSettingsSource(DotEnvSettingsSource):
-    def prepare_field_value(
-        self,
-        field_name: str,
-        field: FieldInfo,
-        value: Any,
-        value_is_complex: bool,
-    ) -> Any:
-        if field_name == "cors_origins" and isinstance(value, str):
-            parsed = parse_cors_origins_env(value)
-            if parsed is not None:
-                return parsed
-        return super().prepare_field_value(field_name, field, value, value_is_complex)
+class AgentClefEnvSettingsSource(CorsOriginsSettingsSourceMixin, EnvSettingsSource):
+    pass
+
+
+class AgentClefDotEnvSettingsSource(CorsOriginsSettingsSourceMixin, DotEnvSettingsSource):
+    pass
 
 
 class Settings(BaseSettings):

@@ -6,6 +6,8 @@ from server.config import Settings
 
 
 def test_health_check_returns_public_runtime_state(monkeypatch: MonkeyPatch) -> None:
+    for field_name in Settings.model_fields:
+        monkeypatch.delenv(f"AGENTCLEF_{field_name.upper()}", raising=False)
     monkeypatch.setattr(Settings, "model_config", {**Settings.model_config, "env_file": None})
     settings = Settings()
     app = create_app(settings)
