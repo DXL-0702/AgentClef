@@ -149,6 +149,16 @@ def test_draft_score_rejects_duplicate_chord_id() -> None:
         DraftScore.model_validate(invalid_payload)
 
 
+def test_draft_score_rejects_duplicate_uncertainty_marker_id() -> None:
+    bundle = load_fixture_bundle()
+    invalid_payload = deepcopy(bundle["draft_score"])
+    duplicate_marker = deepcopy(invalid_payload["uncertainty_markers"][0])
+    invalid_payload["uncertainty_markers"].append(duplicate_marker)
+
+    with pytest.raises(ValueError, match="Duplicate UncertaintyMarker ID found: uncertain-1"):
+        DraftScore.model_validate(invalid_payload)
+
+
 def test_draft_score_rejects_unknown_uncertainty_note_reference() -> None:
     bundle = load_fixture_bundle()
     invalid_payload = deepcopy(bundle["draft_score"])
@@ -176,6 +186,15 @@ def test_beat_grid_rejects_non_increasing_index() -> None:
     invalid_payload["beat_grid"]["beats"][1]["index"] = 0
 
     with pytest.raises(ValueError, match="beat index must be strictly increasing"):
+        DraftScore.model_validate(invalid_payload)
+
+
+def test_beat_grid_rejects_non_power_of_two_denominator() -> None:
+    bundle = load_fixture_bundle()
+    invalid_payload = deepcopy(bundle["draft_score"])
+    invalid_payload["beat_grid"]["meter_denominator"] = 3
+
+    with pytest.raises(ValueError, match="meter_denominator must be a power of 2"):
         DraftScore.model_validate(invalid_payload)
 
 

@@ -121,6 +121,9 @@ class BeatGrid(StrictSchema):
 
     @model_validator(mode="after")
     def validate_monotonic_beats(self) -> Self:
+        if self.meter_denominator & (self.meter_denominator - 1) != 0:
+            raise ValueError("meter_denominator must be a power of 2")
+
         for previous, current in zip(self.beats, self.beats[1:], strict=False):
             if current.index <= previous.index:
                 raise ValueError("beat index must be strictly increasing")
@@ -281,19 +284,20 @@ class CandidateEditOperation(StrictSchema):
             self._require_note_id()
             if self.pitch is None:
                 raise ValueError("change_pitch operation must include pitch")
-        if self.type == CandidateEditType.change_duration:
+        elif self.type == CandidateEditType.change_duration:
             self._require_note_id()
             if self.duration_beats is None:
                 raise ValueError("change_duration operation must include duration_beats")
-        if self.type == CandidateEditType.move_note:
+        elif self.type == CandidateEditType.move_note:
             self._require_note_id()
             if self.start_beat is None:
                 raise ValueError("move_note operation must include start_beat")
-        if self.type == CandidateEditType.add_note and self.note_event is None:
-            raise ValueError("add_note operation must include note_event")
-        if self.type == CandidateEditType.delete_note:
+        elif self.type == CandidateEditType.add_note:
+            if self.note_event is None:
+                raise ValueError("add_note operation must include note_event")
+        elif self.type == CandidateEditType.delete_note:
             self._require_note_id()
-        if self.type == CandidateEditType.change_chord:
+        elif self.type == CandidateEditType.change_chord:
             if self.chord_event_id is None:
                 raise ValueError("change_chord operation must include chord_event_id")
             if self.chord_label is None:
@@ -373,7 +377,11 @@ class DraftScore(StrictSchema):
             if tracks_by_id[chord.track_id].kind != TrackKind.chords:
                 raise ValueError("ChordEvent must reference a chords track")
 
+        marker_ids: set[str] = set()
         for marker in self.uncertainty_markers:
+            if marker.id in marker_ids:
+                raise ValueError(f"Duplicate UncertaintyMarker ID found: {marker.id}")
+            marker_ids.add(marker.id)
             for note_id in marker.note_ids:
                 if note_id not in note_ids:
                     raise ValueError(f"UncertaintyMarker references unknown note_id: {note_id}")
