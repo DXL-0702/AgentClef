@@ -1,7 +1,7 @@
 import asyncio
 import io
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import UploadFile
@@ -10,18 +10,31 @@ from pytest import MonkeyPatch
 from starlette.datastructures import Headers
 
 from server.app import create_app
-from server.domain.assets import AudioAsset, TranscriptionJob
-from server.domain.repository import AssetRepository
+from server.domain.assets import AudioAsset, Project, TranscriptionJob
+from server.domain.repository import get_asset_repository
 from server.domain.storage import UploadValidationError, store_audio_upload
+from server.schemas.assets import AudioAssetStatus, ProjectCreateRequest, utc_now
 from tests.settings_helpers import make_settings
 
 
-class FailingTranscriptionJobRepository(AssetRepository):
+class FailingTranscriptionJobRepository:
     def __init__(self) -> None:
-        super().__init__()
+        self._projects: dict[UUID, Project] = {}
         self.created_audio_asset: AudioAsset | None = None
 
-    def create_audio_asset(
+    def create_project(self, payload: ProjectCreateRequest) -> Project:
+        project = Project(
+            id=uuid4(),
+            title=payload.title,
+            created_at=utc_now(),
+        )
+        self._projects[project.id] = project
+        return project
+
+    def get_project(self, project_id: UUID) -> Project | None:
+        return self._projects.get(project_id)
+
+    def create_audio_asset_with_job(
         self,
         *,
         project_id: UUID,
@@ -30,29 +43,29 @@ class FailingTranscriptionJobRepository(AssetRepository):
         content_type: str,
         extension: str,
         size_bytes: int,
-    ) -> AudioAsset:
-        audio_asset = super().create_audio_asset(
+    ) -> tuple[AudioAsset, TranscriptionJob]:
+        self.created_audio_asset = AudioAsset(
+            id=uuid4(),
             project_id=project_id,
             original_filename=original_filename,
             stored_filename=stored_filename,
             content_type=content_type,
             extension=extension,
             size_bytes=size_bytes,
+            status=AudioAssetStatus.uploaded,
+            created_at=utc_now(),
         )
-        self.created_audio_asset = audio_asset
-        return audio_asset
-
-    def create_transcription_job(self, project_id: UUID, audio_asset_id: UUID) -> TranscriptionJob:
         raise RuntimeError("simulated task creation failure")
 
 
 def create_test_client(monkeypatch: MonkeyPatch, storage_path: Path, upload_max_mb: int = 1) -> TestClient:
     settings = make_settings(
         monkeypatch,
+        postgres_dsn="sqlite+pysqlite:///:memory:",
         file_storage_path=str(storage_path),
         upload_max_mb=upload_max_mb,
     )
-    return TestClient(create_app(settings))
+    return TestClient(create_app(settings, initialize_database=True))
 
 
 def create_project(client: TestClient) -> dict[str, str]:
@@ -139,10 +152,14 @@ def test_upload_audio_removes_file_when_task_creation_fails(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    settings = make_settings(monkeypatch, file_storage_path=str(tmp_path))
-    app = create_app(settings)
+    settings = make_settings(
+        monkeypatch,
+        postgres_dsn="sqlite+pysqlite:///:memory:",
+        file_storage_path=str(tmp_path),
+    )
+    app = create_app(settings, initialize_database=True)
     repository = FailingTranscriptionJobRepository()
-    app.state.repository = repository
+    app.dependency_overrides[get_asset_repository] = lambda: repository
     client = TestClient(app)
     project = create_project(client)
 

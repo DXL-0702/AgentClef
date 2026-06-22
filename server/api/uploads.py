@@ -39,7 +39,7 @@ async def upload_audio(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     try:
-        audio_asset = repository.create_audio_asset(
+        audio_asset, job = repository.create_audio_asset_with_job(
             project_id=project.id,
             original_filename=stored_upload.original_filename,
             stored_filename=stored_upload.stored_filename,
@@ -47,7 +47,6 @@ async def upload_audio(
             extension=stored_upload.extension,
             size_bytes=stored_upload.size_bytes,
         )
-        job = repository.create_transcription_job(project_id=project.id, audio_asset_id=audio_asset.id)
     except Exception:
         await delete_stored_upload(
             storage_root=Path(settings.file_storage_path),

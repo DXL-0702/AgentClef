@@ -32,6 +32,22 @@ Project
 └── Revision
 ```
 
+## Persistence Baseline
+
+v0.1 persists the core object graph in PostgreSQL through SQLAlchemy models and Alembic migrations.
+
+The initial persistence baseline creates tables for:
+
+- Project.
+- AudioAsset.
+- TranscriptionJob.
+- DraftScore.
+- AgentMessage.
+- CandidateEdit.
+- Revision.
+
+Structured DraftScore, Agent context, CandidateEdit, and Revision payloads are stored as PostgreSQL JSONB fields. Stable resource metadata remains in typed relational columns.
+
 ## Core Objects
 
 ### Project

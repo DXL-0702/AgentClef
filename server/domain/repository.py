@@ -1,9 +1,13 @@
-from threading import Lock
+from collections.abc import Iterator
+from typing import Protocol
 from uuid import UUID, uuid4
 
 from fastapi import Request
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from server.domain.assets import AudioAsset, Project, TranscriptionJob
+from server.models import AudioAssetRecord, ProjectRecord, TranscriptionJobRecord
 from server.schemas.assets import (
     AudioAssetStatus,
     ProjectCreateRequest,
@@ -12,27 +16,12 @@ from server.schemas.assets import (
 )
 
 
-class AssetRepository:
-    def __init__(self) -> None:
-        self._lock = Lock()
-        self._projects: dict[UUID, Project] = {}
-        self._audio_assets: dict[UUID, AudioAsset] = {}
-        self._jobs: dict[UUID, TranscriptionJob] = {}
-
+class AssetRepository(Protocol):
     def create_project(self, payload: ProjectCreateRequest) -> Project:
-        now = utc_now()
-        project = Project(
-            id=uuid4(),
-            title=payload.title,
-            created_at=now,
-        )
-        with self._lock:
-            self._projects[project.id] = project
-        return project
+        ...
 
     def get_project(self, project_id: UUID) -> Project | None:
-        with self._lock:
-            return self._projects.get(project_id)
+        ...
 
     def create_audio_asset(
         self,
@@ -44,8 +33,111 @@ class AssetRepository:
         extension: str,
         size_bytes: int,
     ) -> AudioAsset:
-        now = utc_now()
-        audio_asset = AudioAsset(
+        ...
+
+    def create_transcription_job(self, project_id: UUID, audio_asset_id: UUID) -> TranscriptionJob:
+        ...
+
+    def create_audio_asset_with_job(
+        self,
+        *,
+        project_id: UUID,
+        original_filename: str,
+        stored_filename: str,
+        content_type: str,
+        extension: str,
+        size_bytes: int,
+    ) -> tuple[AudioAsset, TranscriptionJob]:
+        ...
+
+    def get_transcription_job(self, job_id: UUID) -> TranscriptionJob | None:
+        ...
+
+
+class SqlAlchemyAssetRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def create_project(self, payload: ProjectCreateRequest) -> Project:
+        record = ProjectRecord(
+            id=uuid4(),
+            title=payload.title,
+            created_at=utc_now(),
+        )
+        self._session.add(record)
+        self._commit_and_refresh(record)
+        return _project_from_record(record)
+
+    def get_project(self, project_id: UUID) -> Project | None:
+        record = self._session.get(ProjectRecord, project_id)
+        return _project_from_record(record) if record is not None else None
+
+    def create_audio_asset(
+        self,
+        *,
+        project_id: UUID,
+        original_filename: str,
+        stored_filename: str,
+        content_type: str,
+        extension: str,
+        size_bytes: int,
+    ) -> AudioAsset:
+        record = self._build_audio_asset_record(
+            project_id=project_id,
+            original_filename=original_filename,
+            stored_filename=stored_filename,
+            content_type=content_type,
+            extension=extension,
+            size_bytes=size_bytes,
+        )
+        self._session.add(record)
+        self._commit_and_refresh(record)
+        return _audio_asset_from_record(record)
+
+    def create_transcription_job(self, project_id: UUID, audio_asset_id: UUID) -> TranscriptionJob:
+        record = _build_transcription_job_record(project_id, audio_asset_id)
+        self._session.add(record)
+        self._commit_and_refresh(record)
+        return _transcription_job_from_record(record)
+
+    def create_audio_asset_with_job(
+        self,
+        *,
+        project_id: UUID,
+        original_filename: str,
+        stored_filename: str,
+        content_type: str,
+        extension: str,
+        size_bytes: int,
+    ) -> tuple[AudioAsset, TranscriptionJob]:
+        audio_asset_record = self._build_audio_asset_record(
+            project_id=project_id,
+            original_filename=original_filename,
+            stored_filename=stored_filename,
+            content_type=content_type,
+            extension=extension,
+            size_bytes=size_bytes,
+        )
+        job_record = _build_transcription_job_record(project_id, audio_asset_record.id)
+        self._session.add_all([audio_asset_record, job_record])
+        self._commit_and_refresh(audio_asset_record, job_record)
+        return _audio_asset_from_record(audio_asset_record), _transcription_job_from_record(job_record)
+
+    def get_transcription_job(self, job_id: UUID) -> TranscriptionJob | None:
+        record = self._session.get(TranscriptionJobRecord, job_id)
+        return _transcription_job_from_record(record) if record is not None else None
+
+    def _build_audio_asset_record(
+        self,
+        *,
+        project_id: UUID,
+        original_filename: str,
+        stored_filename: str,
+        content_type: str,
+        extension: str,
+        size_bytes: int,
+    ) -> AudioAssetRecord:
+        return AudioAssetRecord(
             id=uuid4(),
             project_id=project_id,
             original_filename=original_filename,
@@ -53,34 +145,68 @@ class AssetRepository:
             content_type=content_type,
             extension=extension,
             size_bytes=size_bytes,
-            status=AudioAssetStatus.uploaded,
-            created_at=now,
+            status=AudioAssetStatus.uploaded.value,
+            created_at=utc_now(),
         )
-        with self._lock:
-            self._audio_assets[audio_asset.id] = audio_asset
-        return audio_asset
 
-    def create_transcription_job(self, project_id: UUID, audio_asset_id: UUID) -> TranscriptionJob:
-        now = utc_now()
-        job = TranscriptionJob(
-            id=uuid4(),
-            project_id=project_id,
-            audio_asset_id=audio_asset_id,
-            status=TranscriptionJobStatus.uploaded,
-            created_at=now,
-            updated_at=now,
-        )
-        with self._lock:
-            self._jobs[job.id] = job
-        return job
-
-    def get_transcription_job(self, job_id: UUID) -> TranscriptionJob | None:
-        with self._lock:
-            return self._jobs.get(job_id)
+    def _commit_and_refresh(self, *records: object) -> None:
+        try:
+            self._session.commit()
+        except SQLAlchemyError:
+            self._session.rollback()
+            raise
+        for record in records:
+            self._session.refresh(record)
 
 
-def get_asset_repository(request: Request) -> AssetRepository:
-    repository = getattr(request.app.state, "repository", None)
-    if not isinstance(repository, AssetRepository):
-        raise RuntimeError("asset repository is not initialized")
-    return repository
+def _build_transcription_job_record(project_id: UUID, audio_asset_id: UUID) -> TranscriptionJobRecord:
+    now = utc_now()
+    return TranscriptionJobRecord(
+        id=uuid4(),
+        project_id=project_id,
+        audio_asset_id=audio_asset_id,
+        status=TranscriptionJobStatus.uploaded.value,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def _project_from_record(record: ProjectRecord) -> Project:
+    return Project(
+        id=record.id,
+        title=record.title,
+        created_at=record.created_at,
+    )
+
+
+def _audio_asset_from_record(record: AudioAssetRecord) -> AudioAsset:
+    return AudioAsset(
+        id=record.id,
+        project_id=record.project_id,
+        original_filename=record.original_filename,
+        stored_filename=record.stored_filename,
+        content_type=record.content_type,
+        extension=record.extension,
+        size_bytes=record.size_bytes,
+        status=AudioAssetStatus(record.status),
+        created_at=record.created_at,
+    )
+
+
+def _transcription_job_from_record(record: TranscriptionJobRecord) -> TranscriptionJob:
+    return TranscriptionJob(
+        id=record.id,
+        project_id=record.project_id,
+        audio_asset_id=record.audio_asset_id,
+        status=TranscriptionJobStatus(record.status),
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
+
+
+def get_asset_repository(request: Request) -> Iterator[AssetRepository]:
+    session_factory = getattr(request.app.state, "session_factory", None)
+    if session_factory is None:
+        raise RuntimeError("database session factory is not initialized")
+    with session_factory() as session:
+        yield SqlAlchemyAssetRepository(session)
