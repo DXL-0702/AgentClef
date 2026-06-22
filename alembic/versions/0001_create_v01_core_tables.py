@@ -75,6 +75,11 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_draft_scores_project_id", "draft_scores", ["project_id"])
+    op.create_index(
+        "ix_draft_scores_transcription_job_id",
+        "draft_scores",
+        ["transcription_job_id"],
+    )
     op.create_table(
         "agent_messages",
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -89,6 +94,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_agent_messages_project_id", "agent_messages", ["project_id"])
+    op.create_index("ix_agent_messages_draft_score_id", "agent_messages", ["draft_score_id"])
     op.create_table(
         "candidate_edits",
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -121,17 +127,21 @@ def upgrade() -> None:
     )
     op.create_index("ix_revisions_draft_score_id", "revisions", ["draft_score_id"])
     op.create_index("ix_revisions_project_id", "revisions", ["project_id"])
+    op.create_index("ix_revisions_candidate_edit_id", "revisions", ["candidate_edit_id"])
 
 
 def downgrade() -> None:
+    op.drop_index("ix_revisions_candidate_edit_id", table_name="revisions")
     op.drop_index("ix_revisions_project_id", table_name="revisions")
     op.drop_index("ix_revisions_draft_score_id", table_name="revisions")
     op.drop_table("revisions")
     op.drop_index("ix_candidate_edits_project_id", table_name="candidate_edits")
     op.drop_index("ix_candidate_edits_draft_score_id", table_name="candidate_edits")
     op.drop_table("candidate_edits")
+    op.drop_index("ix_agent_messages_draft_score_id", table_name="agent_messages")
     op.drop_index("ix_agent_messages_project_id", table_name="agent_messages")
     op.drop_table("agent_messages")
+    op.drop_index("ix_draft_scores_transcription_job_id", table_name="draft_scores")
     op.drop_index("ix_draft_scores_project_id", table_name="draft_scores")
     op.drop_table("draft_scores")
     op.drop_index("ix_transcription_jobs_project_id", table_name="transcription_jobs")

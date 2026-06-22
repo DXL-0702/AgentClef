@@ -21,6 +21,11 @@ EXPECTED_CORE_TABLES = {
     "revisions",
     "transcription_jobs",
 }
+EXPECTED_SET_NULL_FK_INDEXES = {
+    "agent_messages": {"ix_agent_messages_draft_score_id"},
+    "draft_scores": {"ix_draft_scores_transcription_job_id"},
+    "revisions": {"ix_revisions_candidate_edit_id"},
+}
 
 
 def sqlite_file_dsn(path: Path) -> str:
@@ -41,6 +46,9 @@ def test_alembic_upgrade_creates_v01_core_tables(tmp_path: Path) -> None:
     assert "duration_seconds" in audio_asset_columns
     orm_audio_asset_columns = {column.name for column in AudioAssetRecord.__table__.columns}
     assert audio_asset_columns == orm_audio_asset_columns
+    for table_name, expected_indexes in EXPECTED_SET_NULL_FK_INDEXES.items():
+        indexes = {index["name"] for index in inspector.get_indexes(table_name)}
+        assert expected_indexes.issubset(indexes)
 
 
 def test_sqlalchemy_repository_persists_upload_foundation_records(

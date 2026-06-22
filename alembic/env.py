@@ -18,7 +18,7 @@ def get_database_url() -> str:
     configured_url = config.get_main_option("sqlalchemy.url")
     if configured_url and not configured_url.startswith("driver://"):
         return configured_url
-    return get_settings().postgres_dsn
+    return str(get_settings().postgres_dsn)
 
 
 def run_migrations_offline() -> None:
