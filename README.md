@@ -12,9 +12,9 @@ An AI Agent assisted transcription review workbench that turns audio into an edi
 [![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vite.dev)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org)
 [![Redis](https://img.shields.io/badge/Redis-DC382D?style=flat-square&logo=redis&logoColor=white)](https://redis.io)
-[![Status](https://img.shields.io/badge/Status-v0.1_Planning-blue?style=flat-square)](./docs/v0.1/issues.md)
+[![Status](https://img.shields.io/badge/Status-v0.1_Planning-blue?style=flat-square)](./docs/v0.1/)
 
-[English](README.md) · [简体中文](README.zh-CN.md) · [Docs](./docs/README.md) · [Architecture](./docs/technical-architecture.md) · [v0.1 Issues](./docs/v0.1/issues.md)
+[English](README.md) · [简体中文](README.zh-CN.md) · [Docs](./docs/README.md) · [Architecture](./docs/technical-architecture.md) · [v0.1](./docs/v0.1/)
 
 </div>
 
@@ -148,15 +148,13 @@ AgentClef/
 
 ```bash
 # Backend
-cd server
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
-uvicorn main:app --reload
+uvicorn server.main:app --reload
 
 # Worker
-cd worker
-celery -A app worker --loglevel=info
+celery -A worker.app:celery_app worker --loglevel=info
 
 # Frontend
 cd web
@@ -189,7 +187,6 @@ npx playwright test
 - [Accuracy Strategy](./docs/accuracy-strategy.md)
 - [Competitive Insights](./docs/competitive-insights.md)
 - [v0.1 Architecture](./docs/v0.1/architecture.md)
-- [v0.1 Issues](./docs/v0.1/issues.md)
 
 ## Development Process
 
@@ -207,7 +204,6 @@ AgentClef is currently in **v0.1**: the minimum transcription review loop.
 
 - [v0.1 Documentation](./docs/v0.1/)
 - [v0.1 Architecture](./docs/v0.1/architecture.md)
-- [v0.1 Issues](./docs/v0.1/issues.md)
 
 ---
 
