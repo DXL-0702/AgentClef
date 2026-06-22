@@ -123,10 +123,14 @@ class BeatGrid(StrictSchema):
     @model_validator(mode="after")
     def validate_monotonic_beats(self) -> Self:
         for previous, current in zip(self.beats, self.beats[1:], strict=False):
+            if current.index <= previous.index:
+                raise ValueError("beat index must be strictly increasing")
             if current.time_seconds <= previous.time_seconds:
                 raise ValueError("beat time_seconds must be strictly increasing")
             if current.beat <= previous.beat:
                 raise ValueError("beat positions must be strictly increasing")
+            if current.measure < previous.measure:
+                raise ValueError("beat measure must be non-decreasing")
         return self
 
 
@@ -185,25 +189,54 @@ class SelectionRange(StrictSchema):
 
     @model_validator(mode="after")
     def validate_target(self) -> Self:
-        if self.target_type is SelectionTargetType.note and len(self.note_ids) != 1:
-            raise ValueError("note selection must include exactly one note_id")
-        if self.target_type is SelectionTargetType.notes and not self.note_ids:
-            raise ValueError("notes selection must include at least one note_id")
-        if self.target_type is SelectionTargetType.chord and self.chord_event_id is None:
-            raise ValueError("chord selection must include chord_event_id")
-        if (
-            self.target_type is SelectionTargetType.uncertainty_marker
-            and self.uncertainty_marker_id is None
-        ):
-            raise ValueError("uncertainty_marker selection must include uncertainty_marker_id")
-        if self.target_type is SelectionTargetType.measure_range and self.measure_range is None:
-            raise ValueError("measure_range selection must include measure_range")
-        if (
-            self.target_type is SelectionTargetType.time_range
-            and self.audio_range is None
-            and self.beat_range is None
-        ):
-            raise ValueError("time_range selection must include audio_range or beat_range")
+        if self.target_type is SelectionTargetType.note:
+            if len(self.note_ids) != 1:
+                raise ValueError("note selection must include exactly one note_id")
+            if self.chord_event_id or self.uncertainty_marker_id or self.measure_range:
+                raise ValueError(
+                    "note selection must not include chord_event_id, "
+                    "uncertainty_marker_id, or measure_range",
+                )
+        elif self.target_type is SelectionTargetType.notes:
+            if not self.note_ids:
+                raise ValueError("notes selection must include at least one note_id")
+            if self.chord_event_id or self.uncertainty_marker_id or self.measure_range:
+                raise ValueError(
+                    "notes selection must not include chord_event_id, "
+                    "uncertainty_marker_id, or measure_range",
+                )
+        elif self.target_type is SelectionTargetType.chord:
+            if self.chord_event_id is None:
+                raise ValueError("chord selection must include chord_event_id")
+            if self.note_ids or self.uncertainty_marker_id or self.measure_range:
+                raise ValueError(
+                    "chord selection must not include note_ids, "
+                    "uncertainty_marker_id, or measure_range",
+                )
+        elif self.target_type is SelectionTargetType.uncertainty_marker:
+            if self.uncertainty_marker_id is None:
+                raise ValueError("uncertainty_marker selection must include uncertainty_marker_id")
+            if self.note_ids or self.chord_event_id or self.measure_range:
+                raise ValueError(
+                    "uncertainty_marker selection must not include note_ids, "
+                    "chord_event_id, or measure_range",
+                )
+        elif self.target_type is SelectionTargetType.measure_range:
+            if self.measure_range is None:
+                raise ValueError("measure_range selection must include measure_range")
+            if self.note_ids or self.chord_event_id or self.uncertainty_marker_id:
+                raise ValueError(
+                    "measure_range selection must not include note_ids, "
+                    "chord_event_id, or uncertainty_marker_id",
+                )
+        elif self.target_type is SelectionTargetType.time_range:
+            if self.audio_range is None and self.beat_range is None:
+                raise ValueError("time_range selection must include audio_range or beat_range")
+            if self.note_ids or self.chord_event_id or self.uncertainty_marker_id or self.measure_range:
+                raise ValueError(
+                    "time_range selection must not include note_ids, chord_event_id, "
+                    "uncertainty_marker_id, or measure_range",
+                )
         return self
 
 
@@ -216,6 +249,20 @@ class UncertaintyMarker(StrictSchema):
     note_ids: list[str] = Field(default_factory=list)
     chord_event_ids: list[str] = Field(default_factory=list)
     confidence: Confidence | None = None
+
+    @model_validator(mode="after")
+    def validate_has_target(self) -> Self:
+        if (
+            self.audio_range is None
+            and self.beat_range is None
+            and not self.note_ids
+            and not self.chord_event_ids
+        ):
+            raise ValueError(
+                "UncertaintyMarker must have at least one target: "
+                "audio_range, beat_range, note_ids, or chord_event_ids",
+            )
+        return self
 
 
 class CandidateEditOperation(StrictSchema):
@@ -296,17 +343,44 @@ class DraftScore(StrictSchema):
 
     @model_validator(mode="after")
     def validate_event_track_references(self) -> Self:
+        if self.updated_at < self.created_at:
+            raise ValueError("updated_at must be greater than or equal to created_at")
+
+        track_ids = [track.id for track in self.tracks]
+        if len(track_ids) != len(set(track_ids)):
+            raise ValueError("Track IDs must be unique within DraftScore")
+
         tracks_by_id = {track.id: track for track in self.tracks}
         if not any(track.kind is TrackKind.main_melody for track in self.tracks):
             raise ValueError("DraftScore must include a main_melody track")
+
+        note_ids: set[str] = set()
         for note in self.notes:
+            if note.id in note_ids:
+                raise ValueError(f"Duplicate NoteEvent ID found: {note.id}")
+            note_ids.add(note.id)
             if note.track_id not in tracks_by_id:
                 raise ValueError(f"NoteEvent references unknown track_id: {note.track_id}")
             if tracks_by_id[note.track_id].kind is TrackKind.chords:
                 raise ValueError("NoteEvent must not reference a chords track")
+
+        chord_ids: set[str] = set()
         for chord in self.chords:
+            if chord.id in chord_ids:
+                raise ValueError(f"Duplicate ChordEvent ID found: {chord.id}")
+            chord_ids.add(chord.id)
             if chord.track_id not in tracks_by_id:
                 raise ValueError(f"ChordEvent references unknown track_id: {chord.track_id}")
             if tracks_by_id[chord.track_id].kind is not TrackKind.chords:
                 raise ValueError("ChordEvent must reference a chords track")
+
+        for marker in self.uncertainty_markers:
+            for note_id in marker.note_ids:
+                if note_id not in note_ids:
+                    raise ValueError(f"UncertaintyMarker references unknown note_id: {note_id}")
+            for chord_event_id in marker.chord_event_ids:
+                if chord_event_id not in chord_ids:
+                    raise ValueError(
+                        f"UncertaintyMarker references unknown chord_event_id: {chord_event_id}",
+                    )
         return self
