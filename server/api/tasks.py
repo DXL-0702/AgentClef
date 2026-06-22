@@ -48,8 +48,19 @@ def dispatch_transcription_job(
         )
 
     celery_app = _get_celery_app(request)
-    celery_app.send_task("agentclef.transcription.run_baseline", args=[str(job.id)])
-    return TranscriptionJobResponse.model_validate(job)
+    updated_job = repository.update_transcription_job_status(
+        job_id,
+        TranscriptionJobStatus.preprocessing,
+    )
+    if updated_job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+    try:
+        celery_app.send_task("agentclef.transcription.run_baseline", args=[str(updated_job.id)])
+    except Exception:
+        repository.update_transcription_job_status(job_id, job.status)
+        raise
+    return TranscriptionJobResponse.model_validate(updated_job)
 
 
 def _get_celery_app(request: Request) -> TaskDispatcher:

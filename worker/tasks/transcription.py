@@ -33,10 +33,7 @@ def mark_transcription_job_status(
         repository = SqlAlchemyAssetRepository(session)
         job = repository.update_transcription_job_status(job_id, status)
     if job is None:
-        return {
-            "job_id": str(job_id),
-            "status": "not_found",
-        }
+        raise ValueError(f"TranscriptionJob with ID {job_id} not found")
     return {
         "job_id": str(job.id),
         "status": job.status.value,

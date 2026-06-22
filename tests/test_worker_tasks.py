@@ -1,6 +1,7 @@
 from pathlib import Path
 from uuid import UUID
 
+import pytest
 from pytest import MonkeyPatch
 
 from server.config import Settings
@@ -69,6 +70,27 @@ def test_mark_transcription_job_status_updates_persisted_job(
 
     assert result == {"job_id": job_id, "status": "preprocessing"}
     assert get_job_status(settings, job_id) == TranscriptionJobStatus.preprocessing
+
+
+def test_mark_transcription_job_status_raises_for_missing_job(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    clear_worker_session_factory_cache()
+    settings = make_settings(
+        monkeypatch,
+        postgres_dsn=sqlite_file_dsn(tmp_path / "worker-missing.db"),
+    )
+    engine = create_database_engine(settings)
+    create_database_schema(engine)
+    missing_job_id = UUID("00000000-0000-0000-0000-000000000000")
+
+    with pytest.raises(ValueError, match=f"TranscriptionJob with ID {missing_job_id} not found"):
+        mark_transcription_job_status(
+            job_id=missing_job_id,
+            status=TranscriptionJobStatus.preprocessing,
+            settings=settings,
+        )
 
 
 def test_mark_transcription_status_task_runs_in_eager_mode(
