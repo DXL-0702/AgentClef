@@ -1,9 +1,52 @@
 from functools import lru_cache
-
 from typing import Any
 
 from pydantic import Field, ValidationInfo, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic.fields import FieldInfo
+from pydantic_settings import (
+    BaseSettings,
+    DotEnvSettingsSource,
+    EnvSettingsSource,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
+
+
+def parse_cors_origins_env(value: str) -> list[str] | None:
+    normalized = value.strip()
+    if not normalized or normalized.startswith("["):
+        return None
+    return [origin.strip() for origin in normalized.split(",") if origin.strip()]
+
+
+class AgentClefEnvSettingsSource(EnvSettingsSource):
+    def prepare_field_value(
+        self,
+        field_name: str,
+        field: FieldInfo,
+        value: Any,
+        value_is_complex: bool,
+    ) -> Any:
+        if field_name == "cors_origins" and isinstance(value, str):
+            parsed = parse_cors_origins_env(value)
+            if parsed is not None:
+                return parsed
+        return super().prepare_field_value(field_name, field, value, value_is_complex)
+
+
+class AgentClefDotEnvSettingsSource(DotEnvSettingsSource):
+    def prepare_field_value(
+        self,
+        field_name: str,
+        field: FieldInfo,
+        value: Any,
+        value_is_complex: bool,
+    ) -> Any:
+        if field_name == "cors_origins" and isinstance(value, str):
+            parsed = parse_cors_origins_env(value)
+            if parsed is not None:
+                return parsed
+        return super().prepare_field_value(field_name, field, value, value_is_complex)
 
 
 class Settings(BaseSettings):
@@ -29,7 +72,30 @@ class Settings(BaseSettings):
     llm_provider: str = "disabled"
     llm_api_key: str | None = None
 
-    @field_validator("app_name", "app_version", "postgres_dsn", "redis_url", "file_storage_path", "llm_provider")
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (
+            init_settings,
+            AgentClefEnvSettingsSource(settings_cls),
+            AgentClefDotEnvSettingsSource(settings_cls),
+            file_secret_settings,
+        )
+
+    @field_validator(
+        "app_name",
+        "app_version",
+        "postgres_dsn",
+        "redis_url",
+        "file_storage_path",
+        "llm_provider",
+    )
     @classmethod
     def validate_required_string(cls, value: str, info: ValidationInfo) -> str:
         normalized = value.strip()

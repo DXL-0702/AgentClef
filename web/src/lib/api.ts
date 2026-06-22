@@ -18,7 +18,7 @@ const HEALTH_TIMEOUT_MS = 7_500;
 
 export async function fetchHealth(): Promise<HealthResponse> {
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => {
+  const timeoutId = setTimeout(() => {
     controller.abort();
   }, HEALTH_TIMEOUT_MS);
 
@@ -29,8 +29,9 @@ export async function fetchHealth(): Promise<HealthResponse> {
     if (!response.ok) {
       throw new Error(`Health check failed: ${response.status}`);
     }
-    return response.json() as Promise<HealthResponse>;
+    const data = await response.json();
+    return data as HealthResponse;
   } finally {
-    window.clearTimeout(timeoutId);
+    clearTimeout(timeoutId);
   }
 }

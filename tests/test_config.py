@@ -5,8 +5,14 @@ from pytest import MonkeyPatch
 from server.config import Settings
 
 
-def isolated_settings(monkeypatch: MonkeyPatch, **overrides: object) -> Settings:
+def isolate_settings_sources(monkeypatch: MonkeyPatch) -> None:
+    for field_name in Settings.model_fields:
+        monkeypatch.delenv(f"AGENTCLEF_{field_name.upper()}", raising=False)
     monkeypatch.setattr(Settings, "model_config", {**Settings.model_config, "env_file": None})
+
+
+def isolated_settings(monkeypatch: MonkeyPatch, **overrides: object) -> Settings:
+    isolate_settings_sources(monkeypatch)
     return Settings(**overrides)  # type: ignore[arg-type]
 
 
@@ -44,6 +50,24 @@ def test_settings_reject_invalid_upload_limits(monkeypatch: MonkeyPatch) -> None
 def test_settings_reject_wildcard_cors_with_credentials(monkeypatch: MonkeyPatch) -> None:
     with pytest.raises(ValidationError, match="cors_origins must not contain"):
         isolated_settings(monkeypatch, cors_origins=["http://localhost:5173", "*"])
+
+
+def test_settings_parse_cors_origins_from_json_env(monkeypatch: MonkeyPatch) -> None:
+    isolate_settings_sources(monkeypatch)
+    monkeypatch.setenv("AGENTCLEF_CORS_ORIGINS", '["http://localhost:5173","http://127.0.0.1:5173"]')
+
+    settings = Settings()
+
+    assert settings.cors_origins == ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+
+def test_settings_parse_cors_origins_from_comma_separated_env(monkeypatch: MonkeyPatch) -> None:
+    isolate_settings_sources(monkeypatch)
+    monkeypatch.setenv("AGENTCLEF_CORS_ORIGINS", "http://localhost:5173, http://127.0.0.1:5173")
+
+    settings = Settings()
+
+    assert settings.cors_origins == ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 
 def test_settings_require_api_key_when_llm_provider_is_enabled(monkeypatch: MonkeyPatch) -> None:

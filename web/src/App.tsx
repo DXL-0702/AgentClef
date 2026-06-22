@@ -8,7 +8,6 @@ export function App() {
     queryFn: fetchHealth,
     retry: false,
     refetchInterval: 10_000,
-    refetchIntervalInBackground: true,
   });
 
   return (
