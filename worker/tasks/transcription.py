@@ -13,7 +13,7 @@ _session_factories_lock = Lock()
 
 
 def get_worker_session_factory(settings: Settings) -> SessionFactory:
-    dsn = settings.postgres_dsn
+    dsn = str(settings.postgres_dsn)
     if dsn not in _session_factories:
         with _session_factories_lock:
             if dsn not in _session_factories:
