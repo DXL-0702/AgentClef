@@ -436,6 +436,24 @@ def test_upload_audio_rejects_actual_media_type_mismatch(
     assert not list(tmp_path.rglob("*.wav"))
 
 
+def test_upload_audio_rejects_corrupt_wav(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = create_test_client(monkeypatch, tmp_path)
+    project = create_project(client)
+    corrupt_wav_payload = b"RIFF\x10\x00\x00\x00WAVEfmt "
+
+    response = client.post(
+        f"/projects/{project['id']}/audio",
+        files={"file": ("corrupt.wav", corrupt_wav_payload, "audio/wav")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "audio duration could not be determined"
+    assert not list(tmp_path.rglob("*.wav"))
+
+
 def test_upload_audio_rejects_extension_content_mismatch(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,

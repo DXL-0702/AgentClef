@@ -2,7 +2,7 @@ import shutil
 import subprocess
 import wave
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import lru_cache, partial
 from pathlib import Path
 from uuid import uuid4
 
@@ -172,7 +172,9 @@ async def store_audio_upload(
             raise UploadValidationError("audio file content does not match extension")
         if declared_content_type not in actual_format.content_types:
             raise UploadValidationError("audio content type does not match file content")
-        duration_seconds = get_audio_duration_seconds(destination=destination, format_spec=actual_format)
+        duration_seconds = await anyio.to_thread.run_sync(
+            partial(get_audio_duration_seconds, destination=destination, format_spec=actual_format),
+        )
         if duration_seconds > max_seconds:
             raise UploadValidationError("audio file exceeds upload duration limit")
 
@@ -256,7 +258,9 @@ def _get_wav_duration_seconds(destination: Path) -> float:
             if frame_rate <= 0 or frame_count <= 0:
                 raise UploadValidationError("audio duration could not be determined")
             return frame_count / float(frame_rate)
-    except (EOFError, wave.Error) as exc:
+    except UploadValidationError:
+        raise
+    except Exception as exc:
         raise UploadValidationError("audio duration could not be determined") from exc
 
 
