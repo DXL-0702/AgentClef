@@ -1,0 +1,312 @@
+from datetime import datetime
+from enum import StrEnum
+from typing import Self
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class StrictSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class TrackKind(StrEnum):
+    main_melody = "main_melody"
+    chords = "chords"
+
+
+class EventSource(StrEnum):
+    model = "model"
+    user = "user"
+    confirmed_agent_edit = "confirmed_agent_edit"
+
+
+class UncertaintyType(StrEnum):
+    pitch_uncertain = "pitch_uncertain"
+    rhythm_uncertain = "rhythm_uncertain"
+    duration_uncertain = "duration_uncertain"
+    chord_uncertain = "chord_uncertain"
+    beat_alignment_uncertain = "beat_alignment_uncertain"
+
+
+class SelectionTargetType(StrEnum):
+    note = "note"
+    notes = "notes"
+    measure_range = "measure_range"
+    time_range = "time_range"
+    chord = "chord"
+    uncertainty_marker = "uncertainty_marker"
+
+
+class CandidateEditType(StrEnum):
+    change_pitch = "change_pitch"
+    change_duration = "change_duration"
+    move_note = "move_note"
+    add_note = "add_note"
+    delete_note = "delete_note"
+    change_chord = "change_chord"
+
+
+class CandidateEditStatus(StrEnum):
+    proposed = "proposed"
+    accepted = "accepted"
+    rejected = "rejected"
+    applied = "applied"
+
+
+class RevisionSource(StrEnum):
+    user = "user"
+    confirmed_agent_edit = "confirmed_agent_edit"
+    system = "system"
+
+
+class Confidence(StrictSchema):
+    overall: float = Field(ge=0, le=1)
+    pitch: float | None = Field(default=None, ge=0, le=1)
+    onset: float | None = Field(default=None, ge=0, le=1)
+    duration: float | None = Field(default=None, ge=0, le=1)
+
+
+class Pitch(StrictSchema):
+    midi: int = Field(ge=0, le=127)
+    name: str | None = Field(default=None, min_length=1)
+
+
+class AudioTimeRange(StrictSchema):
+    start_seconds: float = Field(ge=0)
+    end_seconds: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> Self:
+        if self.end_seconds <= self.start_seconds:
+            raise ValueError("end_seconds must be greater than start_seconds")
+        return self
+
+
+class BeatRange(StrictSchema):
+    start_beat: float = Field(ge=0)
+    end_beat: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> Self:
+        if self.end_beat <= self.start_beat:
+            raise ValueError("end_beat must be greater than start_beat")
+        return self
+
+
+class MeasureRange(StrictSchema):
+    start_measure: int = Field(ge=1)
+    end_measure: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> Self:
+        if self.end_measure < self.start_measure:
+            raise ValueError("end_measure must be greater than or equal to start_measure")
+        return self
+
+
+class BeatPoint(StrictSchema):
+    index: int = Field(ge=0)
+    time_seconds: float = Field(ge=0)
+    beat: float = Field(ge=0)
+    measure: int = Field(ge=1)
+    confidence: float | None = Field(default=None, ge=0, le=1)
+
+
+class BeatGrid(StrictSchema):
+    tempo_bpm: float = Field(gt=0)
+    meter_numerator: int = Field(ge=1)
+    meter_denominator: int = Field(ge=1)
+    beats: list[BeatPoint] = Field(min_length=1)
+    confidence: Confidence | None = None
+
+    @model_validator(mode="after")
+    def validate_monotonic_beats(self) -> Self:
+        for previous, current in zip(self.beats, self.beats[1:], strict=False):
+            if current.time_seconds <= previous.time_seconds:
+                raise ValueError("beat time_seconds must be strictly increasing")
+            if current.beat <= previous.beat:
+                raise ValueError("beat positions must be strictly increasing")
+        return self
+
+
+class Track(StrictSchema):
+    id: str = Field(min_length=1)
+    kind: TrackKind
+    name: str = Field(min_length=1)
+
+
+class NoteEvent(StrictSchema):
+    id: str = Field(min_length=1)
+    track_id: str = Field(min_length=1)
+    pitch: Pitch
+    audio_start_seconds: float = Field(ge=0)
+    audio_end_seconds: float = Field(gt=0)
+    start_beat: float = Field(ge=0)
+    duration_beats: float = Field(gt=0)
+    source: EventSource
+    confidence: Confidence | None = None
+    notation_hints: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_audio_range(self) -> Self:
+        if self.audio_end_seconds <= self.audio_start_seconds:
+            raise ValueError("audio_end_seconds must be greater than audio_start_seconds")
+        return self
+
+
+class ChordEvent(StrictSchema):
+    id: str = Field(min_length=1)
+    track_id: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    candidate_labels: list[str] = Field(default_factory=list)
+    audio_start_seconds: float = Field(ge=0)
+    audio_end_seconds: float = Field(gt=0)
+    start_beat: float = Field(ge=0)
+    duration_beats: float = Field(gt=0)
+    source: EventSource
+    confidence: Confidence | None = None
+
+    @model_validator(mode="after")
+    def validate_audio_range(self) -> Self:
+        if self.audio_end_seconds <= self.audio_start_seconds:
+            raise ValueError("audio_end_seconds must be greater than audio_start_seconds")
+        return self
+
+
+class SelectionRange(StrictSchema):
+    target_type: SelectionTargetType
+    note_ids: list[str] = Field(default_factory=list)
+    chord_event_id: str | None = Field(default=None, min_length=1)
+    uncertainty_marker_id: str | None = Field(default=None, min_length=1)
+    audio_range: AudioTimeRange | None = None
+    beat_range: BeatRange | None = None
+    measure_range: MeasureRange | None = None
+
+    @model_validator(mode="after")
+    def validate_target(self) -> Self:
+        if self.target_type is SelectionTargetType.note and len(self.note_ids) != 1:
+            raise ValueError("note selection must include exactly one note_id")
+        if self.target_type is SelectionTargetType.notes and not self.note_ids:
+            raise ValueError("notes selection must include at least one note_id")
+        if self.target_type is SelectionTargetType.chord and self.chord_event_id is None:
+            raise ValueError("chord selection must include chord_event_id")
+        if (
+            self.target_type is SelectionTargetType.uncertainty_marker
+            and self.uncertainty_marker_id is None
+        ):
+            raise ValueError("uncertainty_marker selection must include uncertainty_marker_id")
+        if self.target_type is SelectionTargetType.measure_range and self.measure_range is None:
+            raise ValueError("measure_range selection must include measure_range")
+        if (
+            self.target_type is SelectionTargetType.time_range
+            and self.audio_range is None
+            and self.beat_range is None
+        ):
+            raise ValueError("time_range selection must include audio_range or beat_range")
+        return self
+
+
+class UncertaintyMarker(StrictSchema):
+    id: str = Field(min_length=1)
+    type: UncertaintyType
+    message: str = Field(min_length=1)
+    audio_range: AudioTimeRange | None = None
+    beat_range: BeatRange | None = None
+    note_ids: list[str] = Field(default_factory=list)
+    chord_event_ids: list[str] = Field(default_factory=list)
+    confidence: Confidence | None = None
+
+
+class CandidateEditOperation(StrictSchema):
+    type: CandidateEditType
+    note_id: str | None = Field(default=None, min_length=1)
+    chord_event_id: str | None = Field(default=None, min_length=1)
+    pitch: Pitch | None = None
+    duration_beats: float | None = Field(default=None, gt=0)
+    start_beat: float | None = Field(default=None, ge=0)
+    audio_range: AudioTimeRange | None = None
+    note_event: NoteEvent | None = None
+    chord_label: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def validate_operation_payload(self) -> Self:
+        if self.type is CandidateEditType.change_pitch:
+            self._require_note_id()
+            if self.pitch is None:
+                raise ValueError("change_pitch operation must include pitch")
+        if self.type is CandidateEditType.change_duration:
+            self._require_note_id()
+            if self.duration_beats is None:
+                raise ValueError("change_duration operation must include duration_beats")
+        if self.type is CandidateEditType.move_note:
+            self._require_note_id()
+            if self.start_beat is None:
+                raise ValueError("move_note operation must include start_beat")
+        if self.type is CandidateEditType.add_note and self.note_event is None:
+            raise ValueError("add_note operation must include note_event")
+        if self.type is CandidateEditType.delete_note:
+            self._require_note_id()
+        if self.type is CandidateEditType.change_chord:
+            if self.chord_event_id is None:
+                raise ValueError("change_chord operation must include chord_event_id")
+            if self.chord_label is None:
+                raise ValueError("change_chord operation must include chord_label")
+        return self
+
+    def _require_note_id(self) -> None:
+        if self.note_id is None:
+            raise ValueError(f"{self.type.value} operation must include note_id")
+
+
+class CandidateEdit(StrictSchema):
+    id: UUID
+    draft_score_id: UUID
+    draft_score_version: int = Field(ge=1)
+    status: CandidateEditStatus = CandidateEditStatus.proposed
+    summary: str = Field(min_length=1, max_length=255)
+    affected_range: SelectionRange
+    operations: list[CandidateEditOperation] = Field(min_length=1)
+    created_at: datetime
+
+
+class Revision(StrictSchema):
+    id: UUID
+    draft_score_id: UUID
+    draft_score_version: int = Field(ge=1)
+    source: RevisionSource
+    summary: str = Field(min_length=1, max_length=255)
+    affected_range: SelectionRange
+    operations: list[CandidateEditOperation] = Field(default_factory=list)
+    candidate_edit_id: UUID | None = None
+    created_at: datetime
+
+
+class DraftScore(StrictSchema):
+    id: UUID
+    project_id: UUID
+    version: int = Field(ge=1)
+    beat_grid: BeatGrid
+    tracks: list[Track] = Field(min_length=1)
+    notes: list[NoteEvent] = Field(default_factory=list)
+    chords: list[ChordEvent] = Field(default_factory=list)
+    uncertainty_markers: list[UncertaintyMarker] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+    @model_validator(mode="after")
+    def validate_event_track_references(self) -> Self:
+        tracks_by_id = {track.id: track for track in self.tracks}
+        if not any(track.kind is TrackKind.main_melody for track in self.tracks):
+            raise ValueError("DraftScore must include a main_melody track")
+        for note in self.notes:
+            if note.track_id not in tracks_by_id:
+                raise ValueError(f"NoteEvent references unknown track_id: {note.track_id}")
+            if tracks_by_id[note.track_id].kind is TrackKind.chords:
+                raise ValueError("NoteEvent must not reference a chords track")
+        for chord in self.chords:
+            if chord.track_id not in tracks_by_id:
+                raise ValueError(f"ChordEvent references unknown track_id: {chord.track_id}")
+            if tracks_by_id[chord.track_id].kind is not TrackKind.chords:
+                raise ValueError("ChordEvent must reference a chords track")
+        return self
