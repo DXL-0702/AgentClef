@@ -17,6 +17,18 @@ class TimingAnalysis:
     meter_numerator: int
     meter_denominator: int
 
+    def __post_init__(self) -> None:
+        if self.duration_seconds < 0:
+            raise ValueError("duration_seconds must be non-negative")
+        if self.tempo_bpm <= 0:
+            raise ValueError("tempo_bpm must be greater than 0")
+        if self.seconds_per_beat <= 0:
+            raise ValueError("seconds_per_beat must be greater than 0")
+        if self.meter_numerator <= 0:
+            raise ValueError("meter_numerator must be greater than 0")
+        if self.meter_denominator <= 0:
+            raise ValueError("meter_denominator must be greater than 0")
+
 
 def analyze_timing(audio: NormalizedAudio) -> TimingAnalysis:
     tempo_bpm = DEFAULT_TEMPO_BPM

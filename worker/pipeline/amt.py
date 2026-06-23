@@ -22,6 +22,18 @@ class NoteCandidate:
     end_seconds: float
     confidence: float
 
+    def __post_init__(self) -> None:
+        if self.midi < 0 or self.midi > 127:
+            raise ValueError("midi must be between 0 and 127")
+        if not self.name.strip():
+            raise ValueError("name must not be empty")
+        if self.start_seconds < 0:
+            raise ValueError("start_seconds must be non-negative")
+        if self.end_seconds <= self.start_seconds:
+            raise ValueError("end_seconds must be greater than start_seconds")
+        if self.confidence < 0 or self.confidence > 1:
+            raise ValueError("confidence must be between 0 and 1")
+
 
 class AmtAdapter(Protocol):
     def transcribe(
