@@ -80,6 +80,8 @@ class AssetRepository(Protocol):
 
     def get_draft_score_for_job(self, job_id: UUID) -> DraftScore | None: ...
 
+    def get_draft_score_for_project(self, project_id: UUID) -> DraftScore | None: ...
+
 
 class SqlAlchemyAssetRepository:
     def __init__(self, session: Session) -> None:
@@ -246,6 +248,16 @@ class SqlAlchemyAssetRepository:
         statement = (
             select(DraftScoreRecord)
             .where(DraftScoreRecord.transcription_job_id == job_id)
+            .order_by(DraftScoreRecord.version.desc(), DraftScoreRecord.created_at.desc())
+            .limit(1)
+        )
+        record = self._session.execute(statement).scalar_one_or_none()
+        return _draft_score_from_record(record) if record is not None else None
+
+    def get_draft_score_for_project(self, project_id: UUID) -> DraftScore | None:
+        statement = (
+            select(DraftScoreRecord)
+            .where(DraftScoreRecord.project_id == project_id)
             .order_by(DraftScoreRecord.version.desc(), DraftScoreRecord.created_at.desc())
             .limit(1)
         )
