@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from server.schemas.assets import AudioAssetStatus, TranscriptionJobStatus
@@ -32,5 +33,16 @@ class TranscriptionJob:
     project_id: UUID
     audio_asset_id: UUID
     status: TranscriptionJobStatus
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class DraftScore:
+    id: UUID
+    project_id: UUID
+    transcription_job_id: UUID | None
+    version: int
+    payload: dict[str, Any]
     created_at: datetime
     updated_at: datetime

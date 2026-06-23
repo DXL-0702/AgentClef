@@ -31,12 +31,12 @@ v0.1 uses a piano-roll-like timeline editor as the primary editable score view. 
 
 | Layer | Technology | Role |
 | :--- | :--- | :--- |
-| Audio normalization | FFmpeg | Format conversion and standardization |
-| Audio analysis | librosa | Beat, onset, tempo, and feature utilities |
-| AMT baseline | Basic Pitch | Initial monophonic/polyphonic note event baseline |
-| Symbolic music | music21 / pretty_midi | MIDI, MusicXML, and symbolic music utilities |
+| Audio normalization | Python standard library + FFmpeg boundary | WAV baseline handling and non-WAV conversion path |
+| Audio analysis | Timing analysis adapter | Deterministic tempo and beat-grid baseline |
+| AMT baseline | Replaceable AMT adapter | Deterministic NoteEvent candidate baseline |
+| Symbolic music | DraftScore schema | Structured score state for editing, Agent context, and later export |
 
-Basic Pitch is the v0.1 baseline AMT adapter. The architecture keeps model adapters replaceable for later evaluation.
+librosa, Basic Pitch, music21, and pretty_midi are target technologies for later model and export iterations. v0.1 keeps the current worker baseline deterministic and dependency-light while preserving explicit adapter boundaries.
 
 ## LLM Layer
 
