@@ -15,7 +15,12 @@ from server.app import create_app
 from server.domain.assets import AudioAsset, Project, TranscriptionJob
 from server.domain.repository import SqlAlchemyAssetRepository, get_asset_repository
 from server.domain.storage import UploadValidationError, store_audio_upload
-from server.schemas.assets import AudioAssetStatus, ProjectCreateRequest, TranscriptionJobStatus, utc_now
+from server.schemas.assets import (
+    AudioAssetStatus,
+    ProjectCreateRequest,
+    TranscriptionJobStatus,
+    utc_now,
+)
 from tests.settings_helpers import make_settings
 
 
@@ -139,6 +144,13 @@ def create_project(client: TestClient) -> dict[str, str]:
     return response.json()
 
 
+def assert_error_detail(response_payload: dict[str, object], *, code: str, message: str) -> None:
+    assert response_payload["detail"] == {
+        "code": code,
+        "message": message,
+    }
+
+
 def test_create_project_returns_public_project_state(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
@@ -249,7 +261,11 @@ def test_dispatch_transcription_job_rejects_duplicate_after_status_update(
 
     assert first_response.status_code == 202
     assert second_response.status_code == 400
-    assert second_response.json()["detail"] == "cannot dispatch task in status: preprocessing"
+    assert_error_detail(
+        second_response.json(),
+        code="task_not_dispatchable",
+        message="cannot dispatch task in status: preprocessing",
+    )
     assert fake_celery_app.sent_tasks == [
         ("agentclef.transcription.run_baseline", [job["id"]]),
     ]
@@ -274,7 +290,11 @@ def test_dispatch_transcription_job_rejects_active_task(
     response = client.post(f"/tasks/{job['id']}/dispatch")
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "cannot dispatch task in status: preprocessing"
+    assert_error_detail(
+        response.json(),
+        code="task_not_dispatchable",
+        message="cannot dispatch task in status: preprocessing",
+    )
     assert fake_celery_app.sent_tasks == []
 
 
@@ -360,7 +380,11 @@ def test_upload_audio_rejects_filename_over_database_limit(
 
     assert len(oversized_filename) == 256
     assert response.status_code == 400
-    assert response.json()["detail"] == "audio file name exceeds maximum length of 255 characters"
+    assert_error_detail(
+        response.json(),
+        code="upload_validation_failed",
+        message="audio file name exceeds maximum length of 255 characters",
+    )
     assert list(tmp_path.rglob("*")) == []
 
 
@@ -431,7 +455,7 @@ def test_upload_audio_rejects_unknown_project(
     )
 
     assert response.status_code == 404
-    assert response.json()["detail"] == "project not found"
+    assert_error_detail(response.json(), code="project_not_found", message="project not found")
 
 
 def test_upload_audio_rejects_unsupported_extension(
@@ -447,7 +471,11 @@ def test_upload_audio_rejects_unsupported_extension(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "unsupported audio file extension"
+    assert_error_detail(
+        response.json(),
+        code="upload_validation_failed",
+        message="unsupported audio file extension",
+    )
     assert list(tmp_path.rglob("*")) == []
 
 
@@ -464,7 +492,11 @@ def test_upload_audio_rejects_unsupported_content_type(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "unsupported audio content type"
+    assert_error_detail(
+        response.json(),
+        code="upload_validation_failed",
+        message="unsupported audio content type",
+    )
     assert list(tmp_path.rglob("*")) == []
 
 
@@ -481,7 +513,11 @@ def test_upload_audio_rejects_actual_media_type_mismatch(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "unsupported actual audio media type"
+    assert_error_detail(
+        response.json(),
+        code="upload_validation_failed",
+        message="unsupported actual audio media type",
+    )
     assert not list(tmp_path.rglob("*.wav"))
 
 
@@ -499,7 +535,11 @@ def test_upload_audio_rejects_corrupt_wav(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "audio duration could not be determined"
+    assert_error_detail(
+        response.json(),
+        code="upload_validation_failed",
+        message="audio duration could not be determined",
+    )
     assert not list(tmp_path.rglob("*.wav"))
 
 
@@ -518,8 +558,10 @@ def test_upload_audio_reports_missing_ffprobe_for_non_wav_duration(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == (
-        "ffprobe is required to determine the duration of non-WAV audio files"
+    assert_error_detail(
+        response.json(),
+        code="upload_validation_failed",
+        message="ffprobe is required to determine the duration of non-WAV audio files",
     )
     assert not list(tmp_path.rglob("*.mp3"))
 
@@ -537,7 +579,11 @@ def test_upload_audio_rejects_extension_content_mismatch(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "audio file content does not match extension"
+    assert_error_detail(
+        response.json(),
+        code="upload_validation_failed",
+        message="audio file content does not match extension",
+    )
     assert not list(tmp_path.rglob("*.mp3"))
 
 
@@ -554,7 +600,11 @@ def test_upload_audio_rejects_declared_content_type_mismatch(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "audio content type does not match file content"
+    assert_error_detail(
+        response.json(),
+        code="upload_validation_failed",
+        message="audio content type does not match file content",
+    )
     assert not list(tmp_path.rglob("*.wav"))
 
 
@@ -571,7 +621,11 @@ def test_upload_audio_rejects_empty_file(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "audio file must not be empty"
+    assert_error_detail(
+        response.json(),
+        code="upload_validation_failed",
+        message="audio file must not be empty",
+    )
     assert not list(tmp_path.rglob("*.wav"))
 
 
@@ -588,7 +642,11 @@ def test_upload_audio_rejects_file_over_duration_limit(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "audio file exceeds upload duration limit"
+    assert_error_detail(
+        response.json(),
+        code="upload_validation_failed",
+        message="audio file exceeds upload duration limit",
+    )
     assert not list(tmp_path.rglob("*.wav"))
 
 
@@ -606,7 +664,11 @@ def test_upload_audio_rejects_file_over_size_limit(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "audio file exceeds upload size limit"
+    assert_error_detail(
+        response.json(),
+        code="upload_validation_failed",
+        message="audio file exceeds upload size limit",
+    )
     assert not list(tmp_path.rglob("*.wav"))
 
 
@@ -640,4 +702,4 @@ def test_get_unknown_task_returns_404(monkeypatch: MonkeyPatch, tmp_path: Path) 
     response = client.get("/tasks/00000000-0000-0000-0000-000000000000")
 
     assert response.status_code == 404
-    assert response.json()["detail"] == "task not found"
+    assert_error_detail(response.json(), code="task_not_found", message="task not found")

@@ -1,8 +1,9 @@
 from typing import Protocol, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Request, status
 
+from server.api.errors import raise_api_error
 from server.domain.repository import AssetRepository, get_asset_repository
 from server.schemas.assets import TranscriptionJobResponse, TranscriptionJobStatus
 
@@ -17,8 +18,7 @@ DISPATCHABLE_JOB_STATUSES = {
 
 
 class TaskDispatcher(Protocol):
-    def send_task(self, name: str, args: list[str]) -> object:
-        ...
+    def send_task(self, name: str, args: list[str]) -> object: ...
 
 
 @router.get("/{job_id}", response_model=TranscriptionJobResponse)
@@ -28,11 +28,19 @@ def get_transcription_job(
 ) -> TranscriptionJobResponse:
     job = repository.get_transcription_job(job_id)
     if job is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        raise_api_error(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="task_not_found",
+            message="task not found",
+        )
     return TranscriptionJobResponse.model_validate(job)
 
 
-@router.post("/{job_id}/dispatch", response_model=TranscriptionJobResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/{job_id}/dispatch",
+    response_model=TranscriptionJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 def dispatch_transcription_job(
     job_id: UUID,
     request: Request,
@@ -47,10 +55,15 @@ def dispatch_transcription_job(
     if claim is None:
         job = repository.get_transcription_job(job_id)
         if job is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
-        raise HTTPException(
+            raise_api_error(
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="task_not_found",
+                message="task not found",
+            )
+        raise_api_error(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"cannot dispatch task in status: {job.status.value}",
+            code="task_not_dispatchable",
+            message=f"cannot dispatch task in status: {job.status.value}",
         )
     updated_job, previous_status = claim
 

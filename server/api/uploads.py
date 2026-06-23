@@ -2,8 +2,9 @@ import logging
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, UploadFile, status
 
+from server.api.errors import raise_api_error
 from server.config import Settings, get_settings
 from server.domain.repository import AssetRepository, get_asset_repository
 from server.domain.storage import UploadValidationError, delete_stored_upload, store_audio_upload
@@ -27,7 +28,11 @@ async def upload_audio(
 ) -> UploadAudioResponse:
     project = repository.get_project(project_id)
     if project is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+        raise_api_error(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="project_not_found",
+            message="project not found",
+        )
 
     max_bytes = settings.upload_max_mb * 1024 * 1024
     try:
@@ -39,7 +44,11 @@ async def upload_audio(
             max_seconds=settings.upload_max_seconds,
         )
     except UploadValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise_api_error(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="upload_validation_failed",
+            message=str(exc),
+        )
 
     try:
         audio_asset, job = repository.create_audio_asset_with_job(

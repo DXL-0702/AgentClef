@@ -39,8 +39,8 @@ flowchart TB
 
     subgraph Worker["worker/ Celery"]
         Normalize[FFmpeg Normalize]
-        Analyze[librosa Analysis]
-        AMT[Basic Pitch Adapter]
+        Analyze[Timing Analysis]
+        AMT[AMT Adapter Boundary]
         Post[Notation Postprocessor]
         DraftBuild[DraftScore Builder]
     end
@@ -104,7 +104,7 @@ User uploads audio
 | Queue | Redis / Celery | Long transcription job dispatch |
 | Agent Layer | provider adapter | Structured reasoning and CandidateEdit generation |
 
-The worker baseline introduces explicit task dispatch and persisted TranscriptionJob status updates. Full audio normalization and transcription are connected in the pipeline baseline issue.
+The worker pipeline baseline connects stored audio resolution, WAV handling, deterministic timing and AMT candidates, DraftScore validation, persistence, and TranscriptionJob status updates. The AMT and timing layers are adapter boundaries for later model-backed replacement.
 
 ## v0.1 Data Flow
 

@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from server.api.health import router as health_router
+from server.api.jobs import router as jobs_router
 from server.api.projects import router as projects_router
 from server.api.tasks import router as tasks_router
 from server.api.uploads import router as uploads_router
@@ -29,7 +30,12 @@ def create_app(settings: Settings | None = None, *, initialize_database: bool = 
         allow_headers=["*"],
     )
     app.include_router(health_router)
-    app.include_router(projects_router)
-    app.include_router(uploads_router)
-    app.include_router(tasks_router)
+    app.include_router(projects_router, include_in_schema=False)
+    app.include_router(uploads_router, include_in_schema=False)
+    app.include_router(tasks_router, include_in_schema=False)
+    app.include_router(jobs_router, include_in_schema=False)
+    app.include_router(projects_router, prefix="/api")
+    app.include_router(uploads_router, prefix="/api")
+    app.include_router(tasks_router, prefix="/api")
+    app.include_router(jobs_router, prefix="/api")
     return app

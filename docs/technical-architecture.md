@@ -29,8 +29,8 @@ flowchart LR
     API --> Redis[(Redis)]
     Redis --> Worker[Celery Worker]
     Worker --> FFmpeg[FFmpeg Normalization]
-    Worker --> Analysis[librosa Analysis]
-    Worker --> AMT[Basic Pitch AMT Adapter]
+    Worker --> Analysis[Timing Analysis]
+    Worker --> AMT[AMT Adapter Boundary]
     AMT --> Post[Notation Postprocessor]
     Post --> Draft[DraftScore]
     Draft --> DB
@@ -81,16 +81,18 @@ flowchart LR
 - Queue transcription jobs.
 - Run long audio and model pipeline tasks outside request lifecycle.
 - Track task progress and failure states.
-- v0.1 worker baseline provides an explicit task dispatch endpoint before the full transcription pipeline is connected.
+- v0.1 worker baseline connects task dispatch to the first stored audio-to-DraftScore pipeline.
 - Worker tasks update persisted TranscriptionJob state through the repository layer.
 
 ### Audio Pipeline Worker
 
-- Normalize audio with FFmpeg.
-- Extract analysis features with librosa.
-- Run Basic Pitch baseline AMT adapter.
-- Generate initial NoteEvent candidates.
-- Produce BeatGrid and uncertainty markers through postprocessing.
+- Resolve stored audio through storage-root constrained paths.
+- Handle WAV inputs through the Python standard library copy and metadata path; normalize non-WAV inputs through system FFmpeg when available.
+- Produce deterministic timing and AMT candidates through replaceable adapter boundaries.
+- Generate initial NoteEvent candidates and uncertainty markers.
+- Persist schema-validated DraftScore payloads.
+
+librosa and Basic Pitch remain target adapter technologies for model-backed transcription iterations. The current baseline keeps CI deterministic while preserving the replacement boundary.
 
 ### Agent Layer
 
