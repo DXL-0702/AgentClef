@@ -31,16 +31,16 @@ These targets guide internal evaluation and are not external marketing claims.
 v0.1 uses a baseline pipeline:
 
 ```text
-FFmpeg normalization
--> librosa analysis utilities
--> Basic Pitch AMT adapter
+stored audio normalization
+-> deterministic timing analysis
+-> deterministic AMT adapter boundary
 -> BeatGrid mapping
 -> Notation postprocessing
 -> DraftScore generation
 -> UncertaintyMarker generation
 ```
 
-The model layer is adapter-based. Future AMT, chord, beat, and instrument-specific models can be evaluated without changing product logic.
+The model layer is adapter-based. Basic Pitch, librosa-backed analysis, chord models, beat models, and instrument-specific models can be evaluated without changing product logic.
 
 ## Evaluation Assets
 

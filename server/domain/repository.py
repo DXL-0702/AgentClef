@@ -8,8 +8,8 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from server.domain.assets import AudioAsset, Project, TranscriptionJob
-from server.models import AudioAssetRecord, ProjectRecord, TranscriptionJobRecord
+from server.domain.assets import AudioAsset, DraftScore, Project, TranscriptionJob
+from server.models import AudioAssetRecord, DraftScoreRecord, ProjectRecord, TranscriptionJobRecord
 from server.schemas.assets import (
     AudioAssetStatus,
     ProjectCreateRequest,
@@ -38,7 +38,12 @@ class AssetRepository(Protocol):
     ) -> AudioAsset:
         ...
 
-    def create_transcription_job(self, project_id: UUID, audio_asset_id: UUID) -> TranscriptionJob:
+    def get_audio_asset(self, audio_asset_id: UUID) -> AudioAsset | None:
+        ...
+
+    def create_transcription_job(
+        self, project_id: UUID, audio_asset_id: UUID
+    ) -> TranscriptionJob:
         ...
 
     def create_audio_asset_with_job(
@@ -70,6 +75,20 @@ class AssetRepository(Protocol):
         allowed_statuses: Collection[TranscriptionJobStatus],
         target_status: TranscriptionJobStatus,
     ) -> tuple[TranscriptionJob, TranscriptionJobStatus] | None:
+        ...
+
+    def create_draft_score(
+        self,
+        *,
+        draft_score_id: UUID,
+        project_id: UUID,
+        transcription_job_id: UUID,
+        version: int,
+        payload: dict[str, Any],
+    ) -> DraftScore:
+        ...
+
+    def get_draft_score_for_job(self, job_id: UUID) -> DraftScore | None:
         ...
 
 
@@ -115,6 +134,10 @@ class SqlAlchemyAssetRepository:
         self._commit_and_refresh_if_needed(record)
         return _audio_asset_from_record(record)
 
+    def get_audio_asset(self, audio_asset_id: UUID) -> AudioAsset | None:
+        record = self._session.get(AudioAssetRecord, audio_asset_id)
+        return _audio_asset_from_record(record) if record is not None else None
+
     def create_transcription_job(self, project_id: UUID, audio_asset_id: UUID) -> TranscriptionJob:
         record = _build_transcription_job_record(project_id, audio_asset_id)
         self._session.add(record)
@@ -144,7 +167,9 @@ class SqlAlchemyAssetRepository:
         job_record = _build_transcription_job_record(project_id, audio_asset_record.id)
         self._session.add_all([audio_asset_record, job_record])
         self._commit_and_refresh_if_needed(audio_asset_record, job_record)
-        return _audio_asset_from_record(audio_asset_record), _transcription_job_from_record(job_record)
+        return _audio_asset_from_record(audio_asset_record), _transcription_job_from_record(
+            job_record
+        )
 
     def get_transcription_job(self, job_id: UUID) -> TranscriptionJob | None:
         record = self._session.get(TranscriptionJobRecord, job_id)
@@ -205,6 +230,38 @@ class SqlAlchemyAssetRepository:
         self._session.expire(record)
         return claimed_job, previous_status
 
+    def create_draft_score(
+        self,
+        *,
+        draft_score_id: UUID,
+        project_id: UUID,
+        transcription_job_id: UUID,
+        version: int,
+        payload: dict[str, Any],
+    ) -> DraftScore:
+        now = utc_now()
+        record = DraftScoreRecord(
+            id=draft_score_id,
+            project_id=project_id,
+            transcription_job_id=transcription_job_id,
+            version=version,
+            payload=payload,
+            created_at=now,
+            updated_at=now,
+        )
+        self._session.add(record)
+        self._commit_and_refresh_if_needed(record)
+        return _draft_score_from_record(record)
+
+    def get_draft_score_for_job(self, job_id: UUID) -> DraftScore | None:
+        record = (
+            self._session.query(DraftScoreRecord)
+            .filter(DraftScoreRecord.transcription_job_id == job_id)
+            .order_by(DraftScoreRecord.version.desc(), DraftScoreRecord.created_at.desc())
+            .first()
+        )
+        return _draft_score_from_record(record) if record is not None else None
+
     def _build_audio_asset_record(
         self,
         *,
@@ -240,7 +297,9 @@ class SqlAlchemyAssetRepository:
                 self._session.refresh(record)
 
 
-def _build_transcription_job_record(project_id: UUID, audio_asset_id: UUID) -> TranscriptionJobRecord:
+def _build_transcription_job_record(
+    project_id: UUID, audio_asset_id: UUID
+) -> TranscriptionJobRecord:
     now = utc_now()
     return TranscriptionJobRecord(
         id=uuid4(),
@@ -281,6 +340,18 @@ def _transcription_job_from_record(record: TranscriptionJobRecord) -> Transcript
         project_id=record.project_id,
         audio_asset_id=record.audio_asset_id,
         status=TranscriptionJobStatus(record.status),
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
+
+
+def _draft_score_from_record(record: DraftScoreRecord) -> DraftScore:
+    return DraftScore(
+        id=record.id,
+        project_id=record.project_id,
+        transcription_job_id=record.transcription_job_id,
+        version=record.version,
+        payload=record.payload,
         created_at=record.created_at,
         updated_at=record.updated_at,
     )

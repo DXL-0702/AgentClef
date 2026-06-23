@@ -72,8 +72,8 @@ This is a high-level architecture snapshot. The full system design lives in [doc
                              │
               ┌──────────────▼──────────────┐
               │       Celery Worker          │
-              │ FFmpeg → librosa → Basic     │
-              │ Pitch → postprocess          │
+              │ audio normalize → timing     │
+              │ AMT adapter → postprocess    │
               └──────────────┬──────────────┘
                              │
               ┌──────────────▼──────────────┐
@@ -94,7 +94,7 @@ Full stack responsibilities are documented in [docs/technology-stack.md](./docs/
 | **Backend** | Python 3.12+ + FastAPI + Pydantic |
 | **Persistence** | PostgreSQL + SQLAlchemy + Alembic |
 | **Jobs** | Redis + Celery |
-| **Audio / Agent** | FFmpeg + librosa + Basic Pitch + LLM provider adapter |
+| **Audio / Agent** | FFmpeg boundary + AMT adapter + LLM provider adapter |
 
 ## Workflow Preview
 
