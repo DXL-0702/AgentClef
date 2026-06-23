@@ -131,6 +131,10 @@ def _build_uncertainty_markers(
                 "start_seconds": 0.0,
                 "end_seconds": analysis.duration_seconds,
             },
+            "beat_range": {
+                "start_beat": 0.0,
+                "end_beat": round(analysis.duration_seconds / analysis.seconds_per_beat, 6),
+            },
             "note_ids": [],
             "chord_event_ids": [],
             "confidence": {

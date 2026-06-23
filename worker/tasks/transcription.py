@@ -25,6 +25,9 @@ _session_factories_lock = Lock()
 RUNNABLE_BASELINE_STATUSES = {
     TranscriptionJobStatus.uploaded,
     TranscriptionJobStatus.preprocessing,
+    TranscriptionJobStatus.transcribing,
+    TranscriptionJobStatus.postprocessing,
+    TranscriptionJobStatus.draft_ready,
     TranscriptionJobStatus.preprocessing_failed,
     TranscriptionJobStatus.transcription_failed,
     TranscriptionJobStatus.postprocessing_failed,
@@ -138,9 +141,8 @@ def run_transcription_baseline_task(job_id: str) -> dict[str, str]:
         draft_score_id = get_existing_draft_score_id_for_job(
             job_id=parsed_job_id, settings=settings
         )
-        if draft_score_id is None:
-            raise ValueError(f"DraftScore for TranscriptionJob {parsed_job_id} not found")
-        return build_draft_ready_result(job_id=parsed_job_id, draft_score_id=draft_score_id)
+        if draft_score_id is not None:
+            return build_draft_ready_result(job_id=parsed_job_id, draft_score_id=draft_score_id)
     if job.status not in RUNNABLE_BASELINE_STATUSES:
         raise ValueError(f"cannot run baseline transcription in status: {job.status.value}")
     existing_draft_score_id = get_existing_draft_score_id_for_job(

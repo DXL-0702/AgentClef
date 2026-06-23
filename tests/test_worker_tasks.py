@@ -306,6 +306,64 @@ def test_run_transcription_baseline_task_reuses_existing_draft_after_failed_retr
     assert count_draft_scores_for_job(settings, job_id) == 1
 
 
+@pytest.mark.parametrize(
+    "recoverable_status",
+    [TranscriptionJobStatus.transcribing, TranscriptionJobStatus.postprocessing],
+)
+def test_run_transcription_baseline_task_recovers_active_status(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    recoverable_status: TranscriptionJobStatus,
+) -> None:
+    clear_worker_session_factory_cache()
+    settings = make_settings(
+        monkeypatch,
+        postgres_dsn=sqlite_file_dsn(tmp_path / f"worker-active-{recoverable_status.value}.db"),
+        file_storage_path=str(tmp_path / "storage"),
+    )
+    job_id = create_transcription_job_with_audio(settings)
+    mark_transcription_job_status(
+        job_id=UUID(job_id),
+        status=recoverable_status,
+        settings=settings,
+    )
+
+    with monkeypatch.context() as patched:
+        patched.setattr("worker.tasks.transcription.get_settings", lambda: settings)
+        result = run_transcription_baseline_task(job_id)
+
+    assert result["status"] == TranscriptionJobStatus.draft_ready.value
+    assert get_job_status(settings, job_id) == TranscriptionJobStatus.draft_ready
+    assert count_draft_scores_for_job(settings, job_id) == 1
+
+
+def test_run_transcription_baseline_task_regenerates_missing_ready_draft(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    clear_worker_session_factory_cache()
+    settings = make_settings(
+        monkeypatch,
+        postgres_dsn=sqlite_file_dsn(tmp_path / "worker-ready-missing-draft.db"),
+        file_storage_path=str(tmp_path / "storage"),
+    )
+    job_id = create_transcription_job_with_audio(settings)
+    mark_transcription_job_status(
+        job_id=UUID(job_id),
+        status=TranscriptionJobStatus.draft_ready,
+        settings=settings,
+    )
+
+    with monkeypatch.context() as patched:
+        patched.setattr("worker.tasks.transcription.get_settings", lambda: settings)
+        result = run_transcription_baseline_task(job_id)
+
+    assert result["status"] == TranscriptionJobStatus.draft_ready.value
+    assert get_job_status(settings, job_id) == TranscriptionJobStatus.draft_ready
+    assert count_draft_scores_for_job(settings, job_id) == 1
+    DraftScore.model_validate(get_draft_score_payload(settings, job_id))
+
+
 def test_run_transcription_baseline_task_marks_preprocessing_failed_when_audio_missing(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
