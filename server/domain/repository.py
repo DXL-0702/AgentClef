@@ -3,7 +3,7 @@ from typing import Any, Protocol, cast
 from uuid import UUID, uuid4
 
 from fastapi import Request
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -19,11 +19,9 @@ from server.schemas.assets import (
 
 
 class AssetRepository(Protocol):
-    def create_project(self, payload: ProjectCreateRequest) -> Project:
-        ...
+    def create_project(self, payload: ProjectCreateRequest) -> Project: ...
 
-    def get_project(self, project_id: UUID) -> Project | None:
-        ...
+    def get_project(self, project_id: UUID) -> Project | None: ...
 
     def create_audio_asset(
         self,
@@ -35,16 +33,13 @@ class AssetRepository(Protocol):
         extension: str,
         size_bytes: int,
         duration_seconds: float,
-    ) -> AudioAsset:
-        ...
+    ) -> AudioAsset: ...
 
-    def get_audio_asset(self, audio_asset_id: UUID) -> AudioAsset | None:
-        ...
+    def get_audio_asset(self, audio_asset_id: UUID) -> AudioAsset | None: ...
 
     def create_transcription_job(
         self, project_id: UUID, audio_asset_id: UUID
-    ) -> TranscriptionJob:
-        ...
+    ) -> TranscriptionJob: ...
 
     def create_audio_asset_with_job(
         self,
@@ -56,26 +51,22 @@ class AssetRepository(Protocol):
         extension: str,
         size_bytes: int,
         duration_seconds: float,
-    ) -> tuple[AudioAsset, TranscriptionJob]:
-        ...
+    ) -> tuple[AudioAsset, TranscriptionJob]: ...
 
-    def get_transcription_job(self, job_id: UUID) -> TranscriptionJob | None:
-        ...
+    def get_transcription_job(self, job_id: UUID) -> TranscriptionJob | None: ...
 
     def update_transcription_job_status(
         self,
         job_id: UUID,
         status: TranscriptionJobStatus,
-    ) -> TranscriptionJob | None:
-        ...
+    ) -> TranscriptionJob | None: ...
 
     def claim_transcription_job_for_dispatch(
         self,
         job_id: UUID,
         allowed_statuses: Collection[TranscriptionJobStatus],
         target_status: TranscriptionJobStatus,
-    ) -> tuple[TranscriptionJob, TranscriptionJobStatus] | None:
-        ...
+    ) -> tuple[TranscriptionJob, TranscriptionJobStatus] | None: ...
 
     def create_draft_score(
         self,
@@ -85,11 +76,9 @@ class AssetRepository(Protocol):
         transcription_job_id: UUID,
         version: int,
         payload: dict[str, Any],
-    ) -> DraftScore:
-        ...
+    ) -> DraftScore: ...
 
-    def get_draft_score_for_job(self, job_id: UUID) -> DraftScore | None:
-        ...
+    def get_draft_score_for_job(self, job_id: UUID) -> DraftScore | None: ...
 
 
 class SqlAlchemyAssetRepository:
@@ -254,12 +243,13 @@ class SqlAlchemyAssetRepository:
         return _draft_score_from_record(record)
 
     def get_draft_score_for_job(self, job_id: UUID) -> DraftScore | None:
-        record = (
-            self._session.query(DraftScoreRecord)
-            .filter(DraftScoreRecord.transcription_job_id == job_id)
+        statement = (
+            select(DraftScoreRecord)
+            .where(DraftScoreRecord.transcription_job_id == job_id)
             .order_by(DraftScoreRecord.version.desc(), DraftScoreRecord.created_at.desc())
-            .first()
+            .limit(1)
         )
+        record = self._session.execute(statement).scalar_one_or_none()
         return _draft_score_from_record(record) if record is not None else None
 
     def _build_audio_asset_record(

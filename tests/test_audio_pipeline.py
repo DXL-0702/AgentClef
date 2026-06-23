@@ -9,6 +9,7 @@ from pytest import MonkeyPatch
 
 from worker.pipeline.audio import (
     AudioPipelineError,
+    MAX_FFMPEG_ERROR_DETAIL_LENGTH,
     build_normalized_audio_path,
     normalize_audio_to_wav,
     resolve_stored_audio_path,
@@ -26,10 +27,42 @@ def build_wav_bytes(*, duration_seconds: float = 0.25, sample_rate: int = 8_000)
     return buffer.getvalue()
 
 
-def test_normalize_wav_copies_file_and_reads_metadata(tmp_path: Path) -> None:
+def test_normalize_wav_uses_ffmpeg_when_available(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "source.wav"
+    destination_path = tmp_path / "normalized.wav"
+    captured_command: list[str] = []
+    source_path.write_bytes(build_wav_bytes(duration_seconds=0.5, sample_rate=8_000))
+
+    def fake_run(command: list[str], **kwargs: object) -> SimpleNamespace:
+        captured_command.extend(command)
+        destination_path.write_bytes(build_wav_bytes(duration_seconds=0.5, sample_rate=44_100))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr("worker.pipeline.audio.get_ffmpeg_path", lambda: "/usr/bin/ffmpeg")
+    monkeypatch.setattr("worker.pipeline.audio.subprocess.run", fake_run)
+
+    normalized_audio = normalize_audio_to_wav(
+        source_path=source_path,
+        destination_path=destination_path,
+    )
+
+    assert normalized_audio.path == destination_path
+    assert normalized_audio.duration_seconds == 0.5
+    assert normalized_audio.sample_rate == 44_100
+    assert captured_command[0] == "/usr/bin/ffmpeg"
+
+
+def test_normalize_wav_falls_back_to_copy_when_ffmpeg_is_missing(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
     source_path = tmp_path / "source.wav"
     destination_path = tmp_path / "normalized.wav"
     source_path.write_bytes(build_wav_bytes(duration_seconds=0.5, sample_rate=8_000))
+    monkeypatch.setattr("worker.pipeline.audio.get_ffmpeg_path", lambda: None)
 
     normalized_audio = normalize_audio_to_wav(
         source_path=source_path,
@@ -43,7 +76,7 @@ def test_normalize_wav_copies_file_and_reads_metadata(tmp_path: Path) -> None:
     assert normalized_audio.channel_count == 1
 
 
-def test_normalize_non_wav_uses_hardened_ffmpeg_command(
+def test_normalize_audio_uses_hardened_ffmpeg_command(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
 ) -> None:
@@ -85,6 +118,35 @@ def test_normalize_non_wav_uses_hardened_ffmpeg_command(
         "wav",
         str(destination_path),
     ]
+
+
+def test_normalize_audio_includes_truncated_ffmpeg_stderr(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "source.mp3"
+    destination_path = tmp_path / "normalized.wav"
+    stderr = "codec failure: " + ("x" * (MAX_FFMPEG_ERROR_DETAIL_LENGTH + 100))
+    source_path.write_bytes(b"fake mp3 bytes")
+
+    def fake_run(command: list[str], **kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(returncode=1, stderr=stderr)
+
+    monkeypatch.setattr("worker.pipeline.audio.get_ffmpeg_path", lambda: "/usr/bin/ffmpeg")
+    monkeypatch.setattr("worker.pipeline.audio.subprocess.run", fake_run)
+
+    with pytest.raises(AudioPipelineError) as exc_info:
+        normalize_audio_to_wav(
+            source_path=source_path,
+            destination_path=destination_path,
+        )
+
+    error_message = str(exc_info.value)
+    assert error_message.startswith("audio normalization failed: codec failure:")
+    assert error_message.endswith("...")
+    assert len(error_message) <= len("audio normalization failed: ") + (
+        MAX_FFMPEG_ERROR_DETAIL_LENGTH + 3
+    )
 
 
 def test_resolve_stored_audio_path_rejects_path_traversal(tmp_path: Path) -> None:

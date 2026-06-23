@@ -7,6 +7,9 @@ from pathlib import Path
 from uuid import UUID
 
 
+MAX_FFMPEG_ERROR_DETAIL_LENGTH = 2_000
+
+
 class AudioPipelineError(RuntimeError):
     pass
 
@@ -59,13 +62,13 @@ def build_normalized_audio_path(
 
 
 def normalize_audio_to_wav(*, source_path: Path, destination_path: Path) -> NormalizedAudio:
-    if source_path.suffix.lower() == ".wav":
+    ffmpeg_path = get_ffmpeg_path()
+    if ffmpeg_path is not None:
+        _run_ffmpeg_normalization(ffmpeg_path, source_path, destination_path)
+    elif source_path.suffix.lower() == ".wav":
         shutil.copyfile(source_path, destination_path)
     else:
-        ffmpeg_path = get_ffmpeg_path()
-        if ffmpeg_path is None:
-            raise AudioPipelineError("ffmpeg is required to normalize non-WAV audio files")
-        _run_ffmpeg_normalization(ffmpeg_path, source_path, destination_path)
+        raise AudioPipelineError("ffmpeg is required to normalize non-WAV audio files")
 
     return read_wav_metadata(destination_path)
 
@@ -129,4 +132,13 @@ def _run_ffmpeg_normalization(
         raise AudioPipelineError("audio normalization failed") from exc
 
     if result.returncode != 0:
-        raise AudioPipelineError("audio normalization failed")
+        raise AudioPipelineError(_build_ffmpeg_error_message(result.stderr))
+
+
+def _build_ffmpeg_error_message(stderr: str | None) -> str:
+    detail = (stderr or "").strip()
+    if not detail:
+        return "audio normalization failed"
+    if len(detail) > MAX_FFMPEG_ERROR_DETAIL_LENGTH:
+        detail = f"{detail[:MAX_FFMPEG_ERROR_DETAIL_LENGTH]}..."
+    return f"audio normalization failed: {detail}"
