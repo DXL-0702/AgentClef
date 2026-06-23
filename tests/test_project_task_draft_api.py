@@ -1,4 +1,6 @@
+import asyncio
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -6,6 +8,7 @@ from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 
 from server.app import create_app
+from server.api import jobs as jobs_api
 from server.domain.assets import Project, TranscriptionJob
 from server.domain.repository import SqlAlchemyAssetRepository
 from server.schemas.assets import ProjectCreateRequest, TranscriptionJobStatus, utc_now
@@ -264,6 +267,42 @@ def test_job_events_stop_after_terminal_status(
     event_payload = _parse_first_sse_data(response.text)
     assert event_payload["id"] == str(job.id)
     assert event_payload["status"] == TranscriptionJobStatus.draft_ready.value
+
+
+def test_job_event_iterator_loads_job_state_in_thread(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    app = create_test_app(monkeypatch, tmp_path)
+    _, job = create_project_with_job(app)
+    to_thread_calls: list[str] = []
+
+    async def fake_to_thread(
+        func: Callable[..., object],
+        /,
+        *args: object,
+        **kwargs: object,
+    ) -> object:
+        to_thread_calls.append(func.__name__)
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(jobs_api.asyncio, "to_thread", fake_to_thread)
+
+    async def collect_first_event() -> str:
+        event_stream = jobs_api._iter_job_status_events(
+            session_factory=app.state.session_factory,
+            job_id=job.id,
+            poll_interval_seconds=0.1,
+            max_events=1,
+        )
+        return await anext(event_stream)
+
+    event = asyncio.run(collect_first_event())
+
+    assert to_thread_calls == ["_load_job_response_from_session_factory"]
+    assert "event: job_status" in event
+    event_payload = _parse_first_sse_data(event)
+    assert event_payload["id"] == str(job.id)
 
 
 def test_job_events_returns_not_found_for_missing_job(

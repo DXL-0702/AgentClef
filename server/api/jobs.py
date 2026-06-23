@@ -46,7 +46,8 @@ def stream_transcription_job_events(
     poll_interval_seconds: float = Query(default=1.0, ge=0.1, le=10.0),
     max_events: int | None = Query(default=None, ge=1, le=100),
 ) -> StreamingResponse:
-    if _load_job_response(request, job_id) is None:
+    session_factory = _get_session_factory(request)
+    if _load_job_response_from_session_factory(session_factory, job_id) is None:
         raise_api_error(
             status_code=status.HTTP_404_NOT_FOUND,
             code="job_not_found",
@@ -55,7 +56,7 @@ def stream_transcription_job_events(
 
     return StreamingResponse(
         _iter_job_status_events(
-            request=request,
+            session_factory=session_factory,
             job_id=job_id,
             poll_interval_seconds=poll_interval_seconds,
             max_events=max_events,
@@ -67,14 +68,18 @@ def stream_transcription_job_events(
 
 async def _iter_job_status_events(
     *,
-    request: Request,
+    session_factory: SessionFactory,
     job_id: UUID,
     poll_interval_seconds: float,
     max_events: int | None,
 ) -> AsyncIterator[str]:
     sent_events = 0
     while True:
-        job = _load_job_response(request, job_id)
+        job = await asyncio.to_thread(
+            _load_job_response_from_session_factory,
+            session_factory,
+            job_id,
+        )
         if job is None:
             yield _format_sse_event(
                 "job_missing",
@@ -95,6 +100,13 @@ async def _iter_job_status_events(
 
 def _load_job_response(request: Request, job_id: UUID) -> TranscriptionJobResponse | None:
     session_factory = _get_session_factory(request)
+    return _load_job_response_from_session_factory(session_factory, job_id)
+
+
+def _load_job_response_from_session_factory(
+    session_factory: SessionFactory,
+    job_id: UUID,
+) -> TranscriptionJobResponse | None:
     with session_factory() as session:
         repository = SqlAlchemyAssetRepository(session)
         job = repository.get_transcription_job(job_id)
