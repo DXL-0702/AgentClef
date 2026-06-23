@@ -126,6 +126,7 @@ def _run_ffmpeg_normalization(
             check=False,
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=60,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:

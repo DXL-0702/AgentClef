@@ -83,10 +83,12 @@ def test_normalize_audio_uses_hardened_ffmpeg_command(
     source_path = tmp_path / "source.mp3"
     destination_path = tmp_path / "normalized.wav"
     captured_command: list[str] = []
+    captured_kwargs: dict[str, object] = {}
     source_path.write_bytes(b"fake mp3 bytes")
 
     def fake_run(command: list[str], **kwargs: object) -> SimpleNamespace:
         captured_command.extend(command)
+        captured_kwargs.update(kwargs)
         destination_path.write_bytes(build_wav_bytes())
         return SimpleNamespace(returncode=0)
 
@@ -118,6 +120,8 @@ def test_normalize_audio_uses_hardened_ffmpeg_command(
         "wav",
         str(destination_path),
     ]
+    assert captured_kwargs["text"] is True
+    assert captured_kwargs["errors"] == "replace"
 
 
 def test_normalize_audio_includes_truncated_ffmpeg_stderr(
